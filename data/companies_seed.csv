@@ -1,0 +1,274 @@
+﻿name,type,subtype,hq_city,hq_country,market,domain,tier,notes
+Goldman Sachs,bank,bulge bracket,New York,USA,Global,gs.com,1,Strats and securities division; huge quant intake
+Morgan Stanley,bank,bulge bracket,New York,USA,Global,morganstanley.com,1,Quant and S&T graduate programmes
+J.P. Morgan,bank,bulge bracket,New York,USA,Global,jpmorgan.com,1,Markets quant and CIB programmes
+Bank of America,bank,bulge bracket,New York,USA,Global,bofa.com,1,Global markets quant roles
+Citigroup,bank,bulge bracket,New York,USA,Global,citi.com,1,Markets quant and analytics
+Barclays,bank,UK universal,London,UK,Global,barclays.com,1,Strong quant and structuring presence in London
+HSBC,bank,UK universal,London,UK,Global,hsbc.com,2,Global markets and quant analytics
+UBS,bank,Swiss universal,Zurich,Switzerland,Global,ubs.com,1,Now includes Credit Suisse markets teams
+Deutsche Bank,bank,German universal,Frankfurt,Germany,Global,db.com,1,Large quant and structuring franchise in London
+BNP Paribas,bank,French universal,Paris,France,Global,bnpparibas.com,1,Global markets quant; strong in Paris and London
+Societe Generale,bank,French universal,Paris,France,Global,socgen.com,1,Equity derivatives and quant flagship in France
+Credit Agricole CIB,bank,French corporate,Paris,France,Global,ca-cib.com,1,Strong rates and credit quant desks
+Natixis,bank,French corporate,Paris,France,Global,natixis.com,2,Markets quant and structured products
+CIC,bank,French retail,Paris,France,France,cic.fr,3,CIC Market Solutions for derivatives
+Oddo BHF,bank,Franco-German,Paris,France,Europe,oddo-bhf.com,2,Smaller markets teams; easier to reach
+Rothschild and Co,bank,advisory,Paris,France,Global,rothschildandco.com,2,Advisory plus asset management
+Lazard,bank,advisory,Paris,France,Global,lazard.com,3,Advisory and asset management
+Jefferies,bank,US mid-market,New York,USA,Global,jefferies.com,2,Growing European markets business
+Nomura,bank,Japanese,Tokyo,Japan,Global,nomura.com,2,Strong rates and flow derivatives in London
+Mizuho,bank,Japanese,Tokyo,Japan,Global,mizuho.com,3,Japanese banks expanding in EMEA rates
+MUFG,bank,Japanese,Tokyo,Japan,Global,mufg.jp,3,EMEA markets and risk
+SMBC,bank,Japanese,Tokyo,Japan,Global,smbcgroup.com,3,Growing European trading platform
+Standard Chartered,bank,UK emerging markets,London,UK,Global,sc.com,2,Markets quant for EM and FX
+RBC Capital Markets,bank,Canadian,Toronto,Canada,Global,rbccm.com,2,Strong London markets presence
+TD Securities,bank,Canadian,Toronto,Canada,Global,tdsecurities.com,3,Rates and credit trading
+BMO Capital Markets,bank,Canadian,Toronto,Canada,Global,bmocm.com,3,Markets and risk
+Macquarie Group,bank,Australian,Sydney,Australia,Global,macquarie.com,2,Commodities and markets; strong London hub
+ING,bank,Dutch,Amsterdam,Netherlands,Europe,ing.com,2,Financial markets and risk analytics
+Commerzbank,bank,German,Frankfurt,Germany,Europe,commerzbank.com,3,Markets and quant
+UniCredit,bank,Italian,Milan,Italy,Europe,unicredit.eu,3,Markets and risk
+Intesa Sanpaolo,bank,Italian,Milan,Italy,Europe,intesasanpaolo.com,3,Markets and quant
+Santander,bank,Spanish,Madrid,Spain,Global,santander.com,3,Corporate and investment banking markets
+BBVA,bank,Spanish,Madrid,Spain,Europe,bbva.com,3,Markets and quant
+SEB,bank,Nordic,Stockholm,Sweden,Europe,seb.se,3,Quant and structured products in the Nordics
+Nordea,bank,Nordic,Helsinki,Finland,Europe,nordea.com,3,Markets quant and risk
+Danske Bank,bank,Nordic,Copenhagen,Denmark,Europe,danskebank.dk,3,Quant analytics
+DNB,bank,Norwegian,Oslo,Norway,Europe,dnb.no,3,Markets and shipping commodities
+ABN AMRO,bank,Dutch,Amsterdam,Netherlands,Europe,abnamro.com,3,Markets and risk
+Rabobank,bank,Dutch,Utrecht,Netherlands,Europe,rabobank.com,3,Rates and derivatives
+Wells Fargo,bank,US universal,New York,USA,Global,wellsfargo.com,3,Markets and risk analytics
+LBBW,bank,German Landesbank,Stuttgart,Germany,Europe,lbbw.de,3,Structured products
+DZ Bank,bank,German cooperative,Frankfurt,Germany,Europe,dzbank.de,3,Markets and risk
+Handelsbanken,bank,Swedish,Stockholm,Sweden,Europe,handelsbanken.se,3,Quant and risk
+Kepler Cheuvreux,bank,European broker,Paris,France,Europe,keplercheuvreux.com,2,Largest independent European broker
+Bryan Garnier,bank,European broker,London,UK,Europe,bryangarnier.com,3,Growth equity broker
+Berenberg,bank,German private,Frankfurt,Germany,Europe,berenberg.de,3,Markets and quant
+Vontobel,bank,Swiss private,Zurich,Switzerland,Europe,vontobel.com,3,Structured products leader
+Exane,bank,European broker,Paris,France,Europe,exane.com,3,Equity derivatives brokerage
+Portzamparc,bank,French broker,Nantes,France,France,portzamparc.com,3,Smaller French broker
+Mirabaud,bank,Swiss private,Geneva,Switzerland,Europe,mirabaud.com,3,Private banking and asset management
+Pictet,bank,Swiss private,Geneva,Switzerland,Europe,pictet.com,3,Asset management and quant
+Julius Baer,bank,Swiss private,Zurich,Switzerland,Europe,juliusbaer.com,3,Private banking
+UBP,bank,Swiss private,Geneva,Switzerland,Europe,ubp.com,3,Private banking
+EFG International,bank,Swiss private,Zurich,Switzerland,Europe,efginternational.com,3,Private banking
+Lombard Odier,bank,Swiss private,Geneva,Switzerland,Europe,lombardodier.com,3,Asset management and quant
+Edmond de Rothschild,bank,Swiss private,Geneva,Switzerland,Europe,edmond-de-rothschild.com,3,Private banking and asset management
+Zurcher Kantonalbank,bank,Swiss cantonal,Zurich,Switzerland,Europe,zkb.ch,3,Markets and quant
+La Banque Postale,bank,French retail,Paris,France,France,labanquepostale.fr,3,Markets and asset management
+Citadel,hedge_fund,multi-strategy,Miami,USA,Global,citadel.com,1,Top tier quant and multi-strategy hiring
+Millennium Management,hedge_fund,multi-strategy,New York,USA,Global,mlp.com,1,Hires quants continuously across pods
+Point72 Asset Management,hedge_fund,multi-strategy,Stamford,USA,Global,point72.com,1,Academy programme and systematic arm
+Balyasny Asset Management,hedge_fund,multi-strategy,Chicago,USA,Global,balyasny.com,1,Aggressive hiring in London and Paris
+Schonfeld Strategic Advisors,hedge_fund,multi-strategy,New York,USA,Global,schonfeld.com,1,Strong London quant presence
+ExodusPoint Capital Management,hedge_fund,multi-strategy,New York,USA,Global,exoduspoint.com,1,Large London quant footprint
+Walleye Capital,hedge_fund,multi-strategy,Minneapolis,USA,Global,walleyecapital.com,2,Systematic and vol trading
+Verition Fund Management,hedge_fund,multi-strategy,Greenwich,USA,Global,veritionfund.com,2,Quant pods in London
+Jain Global,hedge_fund,multi-strategy,New York,USA,Global,jainglobal.com,2,New large multi-strategy platform
+Bridgewater Associates,hedge_fund,macro,Westport,USA,Global,bridgewater.com,1,Systematic macro research
+AQR Capital Management,hedge_fund,systematic,Greenwich,USA,Global,aqr.com,1,Classic systematic quant shop
+Two Sigma,hedge_fund,systematic,New York,USA,Global,twosigma.com,1,ML driven systematic investing
+D. E. Shaw and Co,hedge_fund,systematic,New York,USA,Global,deshaw.com,1,Systematic and discretionary quant
+Renaissance Technologies,hedge_fund,systematic,East Setauket,USA,Global,rentec.com,1,Legendary systematic fund
+Voleon Group,hedge_fund,systematic ML,Berkeley,USA,Global,voleon.com,2,Machine learning trading
+PDT Partners,hedge_fund,systematic,New York,USA,Global,pdtpartners.com,2,Systematic equity
+Man Group,hedge_fund,systematic,London,UK,Global,man.com,1,AHL systematic plus discretionary
+Winton Group,hedge_fund,systematic,London,UK,Global,winton.com,2,Systematic futures and macro
+Systematica Investments,hedge_fund,systematic,Geneva,Switzerland,Global,systematica.com,2,Systematic managed futures
+Aspect Capital,hedge_fund,systematic,London,UK,Global,aspectcapital.com,2,Systematic futures
+GSA Capital,hedge_fund,systematic,London,UK,Global,gsacapital.co.uk,2,Systematic equities
+Squarepoint Capital,hedge_fund,systematic,London,UK,Global,squarepoint-capital.com,2,Systematic quant with London hub
+Qube Research and Technologies,hedge_fund,systematic,London,UK,Global,qrt.com,1,Systematic and quant tech heavy
+G-Research,hedge_fund,systematic ML,London,UK,Global,gresearch.co.uk,2,Machine learning research
+Quadrature Capital,hedge_fund,systematic,London,UK,Global,quadraturecapital.com,3,Systematic investing
+Eisler Capital,hedge_fund,multi-strategy,London,UK,Global,eislercapital.com,2,Multi-strategy platform
+Rokos Capital Management,hedge_fund,macro,London,UK,Global,rokoscapital.com,2,Systematic macro
+Brevan Howard,hedge_fund,macro,London,UK,Global,brevanhoward.com,1,Macro and systematic
+BlueCrest Capital Management,hedge_fund,macro family office,London,UK,Global,bluecrestcapital.com,3,Family office model
+Marshall Wace,hedge_fund,equity long-short,London,UK,Global,mwam.com,1,Systematic equity alpha capture
+Lansdowne Partners,hedge_fund,equity long-short,London,UK,Global,lansdownepartners.com,2,Equity long-short
+CQS,hedge_fund,credit multi-strategy,London,UK,Global,cqs.com,2,Convertibles and credit
+Cheyne Capital,hedge_fund,credit,London,UK,Global,cheynecapital.com,3,Credit and structured credit
+Capula Investment Management,hedge_fund,fixed income RV,London,UK,Global,capula.com,2,Rates relative value
+BlueBay Asset Management,hedge_fund,credit,London,UK,Global,bluebay.com,3,Credit
+Sculptor Capital Management,hedge_fund,multi-strategy,New York,USA,Global,sculptor.com,2,Credit and multi-strategy
+Elliott Investment Management,hedge_fund,event driven,London,UK,Global,elliottmgmt.com,2,Event driven and credit
+Davidson Kempner,hedge_fund,event driven,New York,USA,Global,dkpartners.com,2,Credit and event driven
+Anchorage Capital Group,hedge_fund,credit,New York,USA,Global,anchoragecap.com,3,Credit
+King Street Capital Management,hedge_fund,credit,New York,USA,Global,kingstreet.com,3,Credit
+Silver Point Capital,hedge_fund,credit,Greenwich,USA,Global,silverpointcapital.com,3,Credit
+GoldenTree Asset Management,hedge_fund,credit,New York,USA,Global,goldentree.com,3,Credit
+Angelo Gordon,hedge_fund,credit and real estate,New York,USA,Global,angelogordon.com,3,Credit
+Apollo Global Management,hedge_fund,alternative credit,New York,USA,Global,apollo.com,2,Alternative credit
+Blackstone,hedge_fund,alternative credit,New York,USA,Global,blackstone.com,2,Credit and alternatives
+Third Point,hedge_fund,event driven,New York,USA,Global,thirdpoint.com,2,Event driven equity
+York Capital Management,hedge_fund,event driven,New York,USA,Global,yorkcapital.com,3,Event driven
+TCI Fund Management,hedge_fund,equity long-short,London,UK,Global,tcifund.com,3,Concentrated equity
+Egerton Capital,hedge_fund,equity long-short,London,UK,Global,egertoncapital.com,3,Equity long-short
+Pharo Management,hedge_fund,macro,London,UK,Global,pharomanagement.com,3,Emerging markets macro
+Sloane Robinson,hedge_fund,macro,London,UK,Global,sloanerobinson.com,3,Global macro
+Sand Grove Capital,hedge_fund,event driven,London,UK,Global,sandgrovecapital.com,3,Event driven
+Pelham Capital,hedge_fund,equity long-short,London,UK,Global,pelhamcapital.com,3,Equity long-short
+CFM,hedge_fund,systematic,Paris,France,Global,cfm.fr,1,Capital Fund Management; flagship Paris quant fund
+Syquant Capital,hedge_fund,systematic,Paris,France,Global,syquant-capital.com,2,Paris systematic fund
+Carmignac,hedge_fund,multi-strategy,Paris,France,Global,carmignac.com,2,French multi-strategy and equity
+Arrowstreet Capital,hedge_fund,systematic,Boston,USA,Global,arrowstreetcapital.com,3,Systematic global equity
+Acadian Asset Management,hedge_fund,systematic,Boston,USA,Global,acadian-asset.com,3,Systematic equity
+Coatue Management,hedge_fund,tech long-short,New York,USA,Global,coatue.com,2,Tech focused
+Tiger Global Management,hedge_fund,tech long-short,New York,USA,Global,tigerglobal.com,2,Tech equity
+D1 Capital Partners,hedge_fund,tech long-short,New York,USA,Global,d1capital.com,3,Tech equity
+Whale Rock Capital Management,hedge_fund,tech long-short,Boston,USA,Global,whalerockcapital.com,3,Tech equity
+Light Street Capital,hedge_fund,tech long-short,Palo Alto,USA,Global,lightstreetcapital.com,3,Tech equity
+Maverick Capital,hedge_fund,tech long-short,New York,USA,Global,maverickcapital.com,3,Tech equity
+Dymon Asia Capital,hedge_fund,macro,Singapore,Singapore,Global,dymonasia.com,3,Asia macro
+Quantedge Capital,hedge_fund,systematic,Singapore,Singapore,Global,quantedge.com,3,Systematic
+Lynx Asset Management,hedge_fund,systematic,Stockholm,Sweden,Global,lynxhedge.se,3,Systematic futures
+IPM Informed Portfolio Management,hedge_fund,systematic,Stockholm,Sweden,Global,ipm.se,3,Systematic macro
+Transtrend,hedge_fund,systematic,Rotterdam,Netherlands,Global,transtrend.com,3,Managed futures
+Unigestion,asset_manager,systematic,Geneva,Switzerland,Global,unigestion.com,3,Systematic and private markets
+Nektar Asset Management,hedge_fund,macro,London,UK,Global,nektarcapital.com,3,Global macro
+CapeView Capital,hedge_fund,credit,London,UK,Global,capeviewcapital.com,3,Credit
+Saba Capital Management,hedge_fund,credit,New York,USA,Global,sabacapital.com,3,Credit and closed-end funds
+Discovery Capital Management,hedge_fund,macro,Norwalk,USA,Global,discoverycapital.com,3,Emerging markets
+Autonomy Capital,hedge_fund,macro,London,UK,Global,autonomycapital.com,3,Macro
+Graham Capital Management,hedge_fund,macro,Norwalk,USA,Global,grahamcapital.com,3,Systematic macro
+Caxton Associates,hedge_fund,macro,New York,USA,Global,caxton.com,3,Global macro
+Moore Capital Management,hedge_fund,macro,New York,USA,Global,moorecap.com,3,Global macro
+Tudor Investment Corporation,hedge_fund,macro,Greenwich,USA,Global,tudor.com,2,Global macro
+Jane Street,prop_hft,market maker,New York,USA,Global,janestreet.com,1,Elite quant trading and research
+Citadel Securities,prop_hft,market maker,Miami,USA,Global,citadelsecurities.com,1,Largest market maker; huge quant hiring
+Jump Trading,prop_hft,market maker,Chicago,USA,Global,jumptrading.com,1,Systematic trading and research
+Hudson River Trading,prop_hft,market maker,New York,USA,Global,hudsonrivertrading.com,1,Algorithmic trading
+Optiver,prop_hft,market maker,Amsterdam,Netherlands,Global,optiver.com,1,Amsterdam London and Paris graduate pipeline
+IMC Trading,prop_hft,market maker,Amsterdam,Netherlands,Global,imc.com,1,Amsterdam London and Chicago desks
+Flow Traders,prop_hft,market maker,Amsterdam,Netherlands,Global,flowtraders.com,1,ETP market maker with Paris office
+DRW,prop_hft,market maker,Chicago,USA,Global,drw.com,1,Proprietary trading and crypto
+Tower Research Capital,prop_hft,market maker,New York,USA,Global,tower-research.com,1,High frequency trading
+XTX Markets,prop_hft,market maker,London,UK,Global,xtxmarkets.com,1,ML driven market maker in London
+Maven Securities,prop_hft,market maker,London,UK,Global,mavensecurities.com,2,Systematic options trading
+Quantlab Financial,prop_hft,market maker,Houston,USA,Global,quantlab.com,3,Systematic trading
+Susquehanna International Group,prop_hft,market maker,Bala Cynwyd,USA,Global,sig.com,1,Game theory driven trading
+Akuna Capital,prop_hft,market maker,Chicago,USA,Global,akunacapital.com,2,Derivatives market making
+Belvedere Trading,prop_hft,market maker,Chicago,USA,Global,belvederetrading.com,3,Options market making
+Wolverine Trading,prop_hft,market maker,Chicago,USA,Global,wolverinetrading.com,3,Options market making
+Chicago Trading Company,prop_hft,market maker,Chicago,USA,Global,chicagotrading.com,3,Derivatives trading
+TransMarket Group,prop_hft,market maker,Chicago,USA,Global,transmarketgroup.com,3,Futures trading
+DV Trading,prop_hft,market maker,Chicago,USA,Global,dvtrading.com,3,Futures and energy
+Old Mission Capital,prop_hft,market maker,Chicago,USA,Global,oldmissioncapital.com,3,ETF and options market making
+PEAK6,prop_hft,market maker,Chicago,USA,Global,peak6.com,3,Options and technology
+Group One Trading,prop_hft,market maker,Chicago,USA,Global,group1.com,3,Options market making
+Virtu Financial,prop_hft,market maker,New York,USA,Global,virtu.com,2,Electronic market making
+GTS,prop_hft,market maker,New York,USA,Global,tradegts.com,3,Electronic market making
+Headlands Technologies,prop_hft,market maker,Chicago,USA,Global,headlandstech.com,3,Systematic trading
+Teza Technologies,prop_hft,market maker,Chicago,USA,Global,tezatech.com,3,Systematic trading
+Tibra Capital,prop_hft,market maker,London,UK,Global,tibra.com,3,Proprietary trading
+Ronin Capital,prop_hft,market maker,Chicago,USA,Global,ronincapital.com,3,Futures trading
+BlackRock,asset_manager,global,New York,USA,Global,blackrock.com,1,Largest asset manager with systematic teams
+Amundi,asset_manager,European,Paris,France,Global,amundi.com,1,Largest European asset manager
+AXA Investment Managers,asset_manager,insurance-backed,Paris,France,Global,axa-im.com,1,Quant and multi-asset teams
+BNP Paribas Asset Management,asset_manager,bank-backed,Paris,France,Global,bnpparibas-am.com,2,Quant and systematic
+Natixis Investment Managers,asset_manager,bank-backed,Paris,France,Global,im.natixis.com,3,Multi-affiliate model
+Ostrum Asset Management,asset_manager,bank-backed,Paris,France,Europe,ostrum.com,3,Fixed income and quant
+Rothschild and Co Asset Management,asset_manager,boutique,Paris,France,Europe,am.eu.rothschildandco.com,3,Conviction management
+Oddo BHF Asset Management,asset_manager,boutique,Paris,France,Europe,am.oddo-bhf.com,3,Equity management
+Comgest,asset_manager,boutique,Paris,France,Global,comgest.com,3,Quality growth equity
+DNCA Finance,asset_manager,boutique,Paris,France,Europe,dnca-investments.com,3,Multi-strategy
+La Financiere de l Echiquier,asset_manager,boutique,Paris,France,Europe,lfde.com,3,Equity and thematic
+Mandarine Gestion,asset_manager,boutique,Paris,France,Europe,mandarine-gestion.com,3,Equity
+Sycomore Asset Management,asset_manager,boutique,Paris,France,Europe,sycomore-am.com,3,SRI equity
+Tocqueville Finance,asset_manager,boutique,Paris,France,Europe,tocquevillefinance.com,3,Equity
+Montpensier Finance,asset_manager,boutique,Paris,France,Europe,montpensier.com,3,Multi-asset
+Dorval Asset Management,asset_manager,boutique,Paris,France,Europe,dorval-am.com,3,Conviction management
+Richelieu Gestion,asset_manager,boutique,Paris,France,Europe,richelieu-gestion.com,3,Equity
+Amplegest,asset_manager,boutique,Paris,France,Europe,amplegest.com,3,Equity
+Kirao,asset_manager,boutique,Paris,France,Europe,kirao.fr,3,Small cap equity
+Moneta Asset Management,asset_manager,boutique,Paris,France,Europe,moneta.fr,3,Equity
+Metropole Gestion,asset_manager,boutique,Paris,France,Europe,metropolegestion.com,3,Value equity
+Tobam,asset_manager,systematic quant,Paris,France,Global,tobam.fr,2,Systematic equity and anti-benchmark
+Ossiam,asset_manager,systematic quant,Paris,France,Global,ossiam.com,2,Systematic and ETF quant
+Vega Investment Managers,asset_manager,boutique,Paris,France,Europe,vega-im.com,3,Multi-asset
+Meeschaert Asset Management,asset_manager,boutique,Paris,France,Europe,meeschaert.com,3,SRI conviction management
+Groupama Asset Management,asset_manager,insurance-backed,Paris,France,Europe,groupama-am.com,3,Multi-asset
+Covea Finance,asset_manager,insurance-backed,Paris,France,Europe,covea-finance.fr,3,Fixed income
+Ofi Invest Asset Management,asset_manager,boutique,Paris,France,Europe,ofi-invest.fr,3,Multi-asset
+Lazard Freres Gestion,asset_manager,boutique,Paris,France,Europe,lazardfreresgestion.fr,3,Equity and convertible
+Schroders,asset_manager,UK,London,UK,Global,schroders.com,2,Quant equity and multi-asset
+Fidelity International,asset_manager,UK,London,UK,Global,fidelityinternational.com,2,Research and quant
+Legal and General Investment Management,asset_manager,insurance-backed,London,UK,Global,lgim.com,2,Systematic index and quant
+Aviva Investors,asset_manager,insurance-backed,London,UK,Global,avivainvestors.com,3,Multi-asset
+M&G Investments,asset_manager,insurance-backed,London,UK,Global,mandg.com,3,Fixed income and equity
+abrdn,asset_manager,UK,Edinburgh,UK,Global,abrdn.com,3,Multi-asset and quant
+Jupiter Asset Management,asset_manager,UK,London,UK,Europe,jupiteram.com,3,Equity
+Baillie Gifford,asset_manager,UK,Edinburgh,UK,Global,bailliegifford.com,3,Growth equity
+Janus Henderson Investors,asset_manager,UK,London,UK,Global,janushenderson.com,3,Quant equity
+Invesco,asset_manager,US,Atlanta,USA,Global,invesco.com,3,Quant and ETF
+PIMCO,asset_manager,fixed income,Newport Beach,USA,Global,pimco.com,2,Fixed income analytics
+Wellington Management,asset_manager,US,Boston,USA,Global,wellington.com,3,Quant research
+State Street Global Advisors,asset_manager,US,Boston,USA,Global,ssga.com,3,Systematic and ETF
+Northern Trust Asset Management,asset_manager,US,Chicago,USA,Global,northerntrust.com,3,Quant and index
+DWS,asset_manager,German,Frankfurt,Germany,Global,dws.com,3,Systematic and Xtrackers
+Union Investment,asset_manager,German,Frankfurt,Germany,Europe,union-investment.de,3,Multi-asset
+Deka Investment,asset_manager,German,Frankfurt,Germany,Europe,deka.de,3,Quant and certificats
+Allianz Global Investors,asset_manager,insurance-backed,Frankfurt,Germany,Global,allianzgi.com,2,Multi-asset and quant
+Robeco,asset_manager,Dutch,Rotterdam,Netherlands,Global,robeco.com,3,Quant research leader
+Candriam,asset_manager,Belgian,Brussels,Belgium,Europe,candriam.com,3,Quant and SRI
+Kempen Capital Management,asset_manager,Dutch,Amsterdam,Netherlands,Europe,kempen.com,3,Specialist strategies
+UBS Asset Management,asset_manager,Swiss,Zurich,Switzerland,Global,ubs.com,3,Multi-asset and quant
+Vontobel Asset Management,asset_manager,Swiss,Zurich,Switzerland,Europe,vontobel.com,3,Quality growth
+GAM Investments,asset_manager,Swiss,Zurich,Switzerland,Global,gam.com,3,Systematic alternatives
+Lombard Odier Investment Managers,asset_manager,Swiss,Geneva,Switzerland,Global,lombardodier.com,3,Systematic and multi-asset
+Quaero Capital,asset_manager,Swiss,Geneva,Switzerland,Europe,quaero-capital.com,3,Equity
+Edmond de Rothschild Asset Management,asset_manager,Swiss,Geneva,Switzerland,Europe,edmond-de-rothschild.com,3,Multi-asset
+Vitol,commodity,energy trading,Geneva,Switzerland,Global,vitol.com,2,Largest independent energy trader
+Glencore,commodity,mining and trading,Baar,Switzerland,Global,glencore.com,2,Metals and energy trading
+Trafigura,commodity,energy and metals,Geneva,Switzerland,Global,trafigura.com,2,Physical trading
+Mercuria Energy Group,commodity,energy trading,Geneva,Switzerland,Global,mercuria.com,2,Energy trading
+Gunvor Group,commodity,energy trading,Geneva,Switzerland,Global,gunvor.com,3,Energy trading
+Cargill,commodity,agri trading,Wayzata,USA,Global,cargill.com,3,Agricultural commodities
+Louis Dreyfus Company,commodity,agri trading,Rotterdam,Netherlands,Global,ldc.com,3,Agricultural commodities
+Bunge,commodity,agri trading,Geneva,Switzerland,Global,bunge.com,3,Agricultural commodities
+Archer Daniels Midland,commodity,agri trading,Chicago,USA,Global,adm.com,3,Agricultural commodities
+Olam Group,commodity,agri trading,Singapore,Singapore,Global,olamgroup.com,3,Agricultural commodities
+TotalEnergies,commodity,oil major,Courbevoie,France,Global,totalenergies.com,2,Trading and shipping division
+Shell,commodity,oil major,London,UK,Global,shell.com,2,Trading and supply
+BP,commodity,oil major,London,UK,Global,bp.com,2,Trading and shipping
+Engie,commodity,utility trading,Paris,France,Global,engie.com,3,Global energy management
+EDF Trading,commodity,utility trading,Paris,France,Global,edftrading.com,3,Power and gas trading
+Statkraft,commodity,power trading,Oslo,Norway,Europe,statkraft.com,3,Power trading
+Axpo Group,commodity,power trading,Baden,Switzerland,Europe,axpo.com,3,Power and gas trading
+Uniper,commodity,energy trading,Dusseldorf,Germany,Europe,uniper.energy,3,Energy trading
+RWE Supply and Trading,commodity,power trading,Essen,Germany,Europe,rwe.com,3,Power and gas trading
+DXT Commodities,commodity,energy trading,Geneva,Switzerland,Europe,dxt-commodities.com,3,Energy trading
+Allianz,insurance_am,insurer,Munich,Germany,Global,allianz.com,3,Investment management arm
+Zurich Insurance,insurance_am,insurer,Zurich,Switzerland,Global,zurich.com,3,Investment management
+MEAG,insurance_am,reinsurer,Munich,Germany,Global,meag.com,3,Munich Re asset manager
+Swiss Life Asset Managers,insurance_am,insurer,Zurich,Switzerland,Europe,swisslife-am.com,3,Real assets and fixed income
+SCOR Investment Partners,insurance_am,reinsurer,Paris,France,Europe,scor-ip.com,3,Insurance asset management
+CNP Assurances,insurance_am,insurer,Paris,France,Europe,cnp.fr,3,Large French insurer
+Credit Agricole Assurances,insurance_am,insurer,Paris,France,Europe,ca-assurances.com,3,Insurance asset management
+BNP Paribas Cardif,insurance_am,insurer,Nanterre,France,Europe,bnpparibascardif.com,3,Insurance asset management
+Generali Investments,insurance_am,insurer,Paris,France,Europe,generali-investments.com,3,Insurance asset management
+AG2R La Mondiale,insurance_am,insurer,Paris,France,Europe,ag2rlamondiale.fr,3,Insurance asset management
+TP ICAP,broker,interdealer,London,UK,Global,tpicap.com,3,Interdealer broking
+BGC Partners,broker,interdealer,London,UK,Global,bgcpartners.com,3,Interdealer broking
+Compagnie Financiere Tradition,broker,interdealer,Lausanne,Switzerland,Global,tradition.com,3,Interdealer broking
+Marex,broker,interdealer,London,UK,Global,marex.com,3,Metals and energy broking
+Cantor Fitzgerald,broker,interdealer,New York,USA,Global,cantor.com,3,Interdealer broking
+Murex,other,risk software,Paris,France,Global,murex.com,3,Trading and risk software vendor
+Bloomberg,other,market data,New York,USA,Global,bloomberg.com,3,Quant research and analytics roles
+LSEG,other,market data,London,UK,Global,lseg.com,3,Refinitiv data and analytics
+MSCI,other,index and risk,New York,USA,Global,msci.com,3,Index and risk model quant
+S&P Global,other,ratings and data,New York,USA,Global,spglobal.com,3,Analytics
+QuantCube Technology,other,alternative data,Paris,France,Global,quantcube.com,3,Economic nowcasting
+Jump Crypto,crypto,market making,Chicago,USA,Global,jumpcrypto.com,3,Crypto trading
+Wintermute,crypto,market making,London,UK,Global,wintermute.com,3,Crypto market making
+B2C2,crypto,market making,London,UK,Global,b2c2.com,3,Crypto market making
+GSR,crypto,market making,London,UK,Global,gsr.io,3,Crypto market making
+Cumberland,crypto,market making,Chicago,USA,Global,cumberland.io,3,Crypto trading
+FalconX,crypto,prime brokerage,San Mateo,USA,Global,falconx.io,3,Crypto prime brokerage
+Galaxy Digital,crypto,digital assets,New York,USA,Global,galaxy.com,3,Crypto trading
+QCP Capital,crypto,trading,Singapore,Singapore,Global,qcp.capital,3,Crypto derivatives
+Flowdesk,crypto,market making,Paris,France,Global,flowdesk.co,3,Paris crypto market maker
+Kaiko,crypto,market data,Paris,France,Global,kaiko.com,3,Crypto data and indices
+CoinShares,crypto,digital assets,Jersey,Jersey,Global,coinshares.com,3,Digital asset manager
