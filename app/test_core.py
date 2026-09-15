@@ -1457,5 +1457,55 @@ class TestProspeoProvider(unittest.TestCase):
         db.execute("DELETE FROM companies WHERE domain='brandnewfirm.com'")
 
 
+class TestLayering(unittest.TestCase):
+    """The data layer must not depend on the web layer.
+
+    people_store imported `server` purely to call derive_from_title, which dragged
+    the HTTP server (and cv_parse and people_parse) into every harvest run. The
+    vocabulary now lives in taxonomy.py, and this test is what keeps it there.
+
+    Run in a fresh interpreter on purpose: by the time these tests run, other
+    modules have already imported server, so the leak would be invisible here.
+    """
+
+    APP_DIR = os.path.dirname(os.path.abspath(db.__file__))
+
+    def _run(self, code):
+        import subprocess
+        src = "import sys; sys.path.insert(0, %r); " % self.APP_DIR + code
+        out = subprocess.run([sys.executable, "-c", src],
+                             capture_output=True, text=True)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return out.stdout.strip()
+
+    def test_people_store_does_not_import_the_web_layer(self):
+        got = self._run("import people_store; "
+                        "print('LEAKED' if 'server' in sys.modules else 'clean')")
+        self.assertEqual(got, "clean")
+
+    def test_harvest_does_not_import_the_web_layer(self):
+        got = self._run("import harvest; "
+                        "print('LEAKED' if 'server' in sys.modules else 'clean')")
+        self.assertEqual(got, "clean")
+
+    def test_taxonomy_is_importable_on_its_own(self):
+        # ('VP', 'FX'): the fx rule precedes options in DESK_RULES, so an options
+        # desk on an FX title resolves to FX. Verified against the real table
+        # rather than assumed - the first version of this test asserted 'Quant'.
+        got = self._run("import taxonomy; "
+                        "print(taxonomy.derive_from_title('VP, FX Options'))")
+        self.assertEqual(got, "('VP', 'FX')")
+
+    def test_server_reexports_the_vocabulary(self):
+        """The API layer and existing callers still speak these names."""
+        for name in ("COMPANY_FIELDS", "CONTACT_FIELDS", "OUTREACH_FIELDS",
+                     "TEMPLATE_FIELDS", "APPLICATION_FIELDS", "PROFILE_FIELDS",
+                     "TITLES_BY_TYPE", "CONTACT_IMPORT_MAP", "derive_from_title"):
+            self.assertTrue(hasattr(server, name), name)
+        import taxonomy
+        self.assertEqual(server.derive_from_title("Managing Director"),
+                         taxonomy.derive_from_title("Managing Director"))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

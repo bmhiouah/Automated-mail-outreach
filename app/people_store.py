@@ -23,7 +23,9 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import db          # noqa: E402
-import server      # noqa: E402
+# The title vocabulary, not the web layer: importing `server` here meant the
+# harvester loaded the whole HTTP app to call one lookup function.
+from taxonomy import derive_from_title  # noqa: E402
 from email_pattern import learn_from_person, reconstruct, company_for_domain  # noqa: E402,E501
 
 # How much we trust an address source, low to high. Used only to decide whether
@@ -100,7 +102,7 @@ def find(person, company):
 def _values(person, company):
     """Flatten a provider person into our column names, deriving what we can."""
     title = _first(person, "job_title", "position_raw", "position") or ""
-    seniority, desk = server.derive_from_title(title)
+    seniority, desk = derive_from_title(title)
     first = (_first(person, "first_name") or "").strip()
     last = (_first(person, "last_name") or "").strip()
 
