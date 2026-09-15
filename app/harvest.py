@@ -51,6 +51,36 @@ def now():
     return __import__("datetime").datetime.now().isoformat(timespec="seconds")
 
 
+def dedupe_locations(locations):
+    """Drop a broad location already covered by a narrower one.
+
+    "London, United Kingdom" cannot be looked up as a single string, so it
+    splits into "London" + "United Kingdom". Keeping both silently widens the
+    search to the whole country (13,560 people instead of 6,576) and spends
+    credits on the wrong geography. If one resolved name contains another, the
+    narrower one wins.
+    """
+    return [a for a in locations
+            if not any(a != b and a.lower() in b.lower() for b in locations)]
+
+
+def parse_locations(raw, api_key=None):
+    """Split a location list without breaking names that contain commas.
+
+    "London, United Kingdom" is one place, not two - but splitting on the comma
+    turns it into "London" + " United Kingdom" and the search then covers a
+    whole country. Try the whole string first; only fall back to splitting when
+    it does not resolve as a single location.
+    """
+    raw = (raw or "").strip()
+    if not raw:
+        return []
+    resolved, _ = prospeo.resolve_location(raw, api_key=api_key)
+    if resolved:
+        return [resolved]
+    return [x.strip() for x in raw.split(",") if x.strip()]
+
+
 # ------------------------------------------------------------------- prospeo
 def run_prospeo(args):
     db.ensure_schema(verbose=True)
@@ -59,7 +89,7 @@ def run_prospeo(args):
         return 1
 
     titles = [t.strip() for t in (args.titles or "").split(",") if t.strip()] or DEFAULT_TITLES
-    wanted = [x.strip() for x in (args.locations or "").split(",") if x.strip()] or DEFAULT_LOCATIONS
+    wanted = parse_locations(args.locations, api_key=args.api_key) or DEFAULT_LOCATIONS
 
     # Prospeo only accepts locations from its own suggestion list, and there is
     # a "London" in Kentucky. Resolve each one so we filter on the right place.
@@ -70,6 +100,7 @@ def run_prospeo(args):
             locations.append(resolved)
         else:
             unresolved.append(name)
+    locations = dedupe_locations(locations)
     if unresolved:
         print(f"  could not resolve: {', '.join(unresolved)}")
 
@@ -150,8 +181,11 @@ def run_prospeo(args):
             break
 
     print(f"\n  Done. {added} added, {updated} updated, {unchanged} unchanged.")
-    print(f"  {new_firms} new firms discovered, {history} career-history rows, "
-          f"{revealed} addresses revealed.")
+    # Report what the table holds, not how many rows we wrote: re-processing a
+    # person replaces their history, so a cumulative count reads as double.
+    total_hist = db.query("SELECT COUNT(*) n FROM person_job_history")[0]["n"]
+    print(f"  {new_firms} new firms discovered, {history} people with career history "
+          f"({total_hist} rows in total), {revealed} addresses revealed.")
     print(f"  Credits spent: {spent:g}\n")
     return 0
 

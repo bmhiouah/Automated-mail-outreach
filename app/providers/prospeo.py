@@ -21,6 +21,7 @@ the address can be revealed later when you actually want to write to them.
     from providers import prospeo
     prospeo.search_person(["Quantitative Researcher"], locations=["London"])
 """
+import hashlib
 import json
 import os
 import sys
@@ -120,8 +121,22 @@ def _call(endpoint, payload, api_key=None, credits=0.0, use_cache=True, force=Fa
 
 
 def _request_key(endpoint, payload):
-    """A stable identity for the request, so paging and filters never collide."""
-    return json.dumps(payload, sort_keys=True, ensure_ascii=False)[:400]
+    """A stable identity for the request, so paging and filters never collide.
+
+    This used to be `json.dumps(...)[:400]`, which silently chopped off the
+    `"page"` field - the filters alone run to ~430 chars. Every page then hashed
+    to the same key, so page 2 was answered from page 1's cache and the
+    harvester re-processed the same 25 people forever. Truncation is never safe
+    for a cache key; hash the whole thing and keep a readable prefix.
+    """
+    blob = json.dumps(payload, sort_keys=True, ensure_ascii=False)
+    digest = hashlib.sha256(blob.encode("utf-8")).hexdigest()[:12]
+    hint = ""
+    if endpoint == "search-person":
+        hint = f"p{payload.get('page', 1)}-"
+    elif endpoint == "enrich-person":
+        hint = "id-"
+    return f"{hint}{digest}"
 
 
 # ------------------------------------------------------------------- endpoints

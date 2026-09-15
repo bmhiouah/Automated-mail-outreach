@@ -1364,6 +1364,74 @@ class TestProspeoProvider(unittest.TestCase):
         self.assertTrue(p["job_history"][1]["is_current"])
         self.assertEqual(p["job_history"][0]["company_name"], "BNP")
 
+    def test_each_page_gets_its_own_cache_key(self):
+        """Pages 1 and 2 must not collide.
+
+        The key used to be the JSON truncated to 400 chars, and the filters
+        alone are longer than that - so "page" was cut off and every page was
+        answered from page 1's cache. The harvester then re-processed the same
+        25 people and reported them as unchanged.
+        """
+        from providers import prospeo
+        titles = ["Quantitative Researcher", "Quantitative Research Analyst",
+                  "Quantitative Trader", "Quantitative Analyst",
+                  "Quantitative Developer", "Systematic Trader",
+                  "Systematic Researcher", "Algorithmic Trader",
+                  "Algorithmic Researcher", "Portfolio Manager",
+                  "Systematic Portfolio Manager"]
+        def key(page):
+            return prospeo._request_key("search-person", {
+                "page": page,
+                "filters": {"person_job_title": {"include": titles,
+                                                 "match_mode": "CONTAINS"},
+                            "person_location_search": {"include": ["London, United Kingdom"]}}})
+        k1, k2, k3 = key(1), key(2), key(3)
+        self.assertEqual(len({k1, k2, k3}), 3, "pages must be distinct")
+        self.assertIn("p2", k2)
+        self.assertTrue(all(len(k) < 60 for k in (k1, k2, k3)))
+
+    def test_a_location_containing_a_comma_is_one_place(self):
+        """'London, United Kingdom' must not become London + United Kingdom.
+
+        Splitting on the comma turns a city into a whole-country search, which
+        silently widens the harvest and burns credits on the wrong people.
+        """
+        import harvest
+        from providers import prospeo
+        known = {"london, united kingdom": "London, United Kingdom",
+                 "paris, france": "Paris, France"}
+        orig = prospeo.resolve_location
+
+        def fake(query, api_key=None):
+            return (known.get((query or "").strip().lower()), {})
+
+        prospeo.resolve_location = fake
+        try:
+            self.assertEqual(harvest.parse_locations("London, United Kingdom"),
+                             ["London, United Kingdom"])
+            self.assertEqual(harvest.parse_locations("Paris, France"),
+                             ["Paris, France"])
+            # Not a real place, so it falls back to splitting.
+            self.assertEqual(harvest.parse_locations("Paris, Berlin"),
+                             ["Paris", "Berlin"])
+        finally:
+            prospeo.resolve_location = orig
+
+    def test_a_broader_location_is_dropped_when_a_narrower_one_covers_it(self):
+        """London + United Kingdom must collapse to London.
+
+        Keeping both widened the search from 6,576 people to 13,560 - the whole
+        country - and spent credits on the wrong geography.
+        """
+        import harvest
+        self.assertEqual(
+            harvest.dedupe_locations(["London, United Kingdom", "United Kingdom"]),
+            ["London, United Kingdom"])
+        # Unrelated places are both kept.
+        self.assertEqual(
+            sorted(harvest.dedupe_locations(["Paris, France", "United Kingdom"])),
+            ["Paris, France", "United Kingdom"])
+
     def test_company_profile_is_normalised(self):
         from providers import prospeo
         c = prospeo.normalise_company({
