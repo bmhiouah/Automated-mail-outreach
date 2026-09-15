@@ -11,10 +11,11 @@ app/server.py      the shell: socket, static files, entry point. No SQL, no shap
    |  dispatch(method, parts, params, payload) -> (status, JSON-able | Raw)
 app/api/           one module per surface + the ROUTES table in __init__.py
    |  db.query / db.execute only
+app/taxonomy.py    shared rules (seniority/desk) - the data layer imports this,
+                   never the web layer: a function reading a lookup table must
+                   not need the HTTP server to do it
 app/db.py          the SQLite door: connect, seed/alias/brief/careers loaders,
                    ensure_schema, and the fetch_log credit ledger
-                   never the web layer: a function that reads a lookup table must not
-                   need the HTTP server to do it.
 ```
 
 Everything above `db.py` speaks only in dicts; nothing below it touches the network
