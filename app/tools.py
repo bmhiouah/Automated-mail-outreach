@@ -3,6 +3,7 @@
     python3 app/tools.py brief
     python3 app/tools.py dupes
     python3 app/tools.py backup
+    python3 app/tools.py test           # the whole suite, on a temp database
     python3 app/tools.py hooks          # the hook line for every firm that has one
     python3 app/tools.py hooks --missing  # tier-1 firms still without a brief
 """
@@ -10,6 +11,7 @@ import os
 import shutil
 import sqlite3
 import sys
+import unittest
 from datetime import date, datetime
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -115,9 +117,24 @@ def backup():
     print(f"  backed up to {dest} ({size//1024} KB)")
 
 
+def test():
+    """Run every test. Lives here so tools.py is the one command you need.
+
+    Tests live in tests/, one module per area, sharing a single temp database
+    (see tests/harness.py). Nothing here touches data/cold_approach.db.
+    """
+    suite = unittest.TestLoader().discover(os.path.join(db.BASE, "tests"),
+                                           top_level_dir=db.BASE)
+    return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else "brief"
     rest = sys.argv[2:]
-    table = {"brief": brief, "dupes": dupes, "backup": backup,
+    table = {"brief": brief, "dupes": dupes, "backup": backup, "test": test,
              "hooks": lambda: hooks(missing="--missing" in rest)}
-    table.get(cmd, lambda: print("usage: python3 app/tools.py brief|dupes|backup|hooks"))()
+    fn = table.get(cmd)
+    if not fn:
+        print("usage: python3 app/tools.py brief|dupes|backup|test|hooks")
+        sys.exit(2)
+    sys.exit(fn() or 0)
