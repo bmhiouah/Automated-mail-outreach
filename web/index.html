@@ -670,6 +670,16 @@ function addContactFor(companyId, companyName){
 }
 
 /* ---------- contacts ---------- */
+// A guessed address looks identical to a real one in a table. The badge is the
+// only thing telling you which is which before you press send.
+function emailBadge(status){
+  const s = (status||'').toLowerCase();
+  if(!s || s==='missing') return '<span class="tag gray" title="no address">none</span>';
+  if(s==='verified') return '<span class="tag good" title="confirmed by the provider">verified</span>';
+  if(s==='guessed') return '<span class="tag warn" title="rebuilt from the firm pattern">guess</span>';
+  if(s==='bounced') return '<span class="tag bad" title="bounced">bounced</span>';
+  return '<span class="tag gray" title="found, not verified">found</span>';
+}
 async function loadContacts(){
   const p = new URLSearchParams();
   if($('#kq').value) p.set('q',$('#kq').value);
@@ -678,18 +688,25 @@ async function loadContacts(){
   $('#kcount').textContent = rows.length+' contacts';
   const statuses='identified,ready,contacted,replied,positive,negative,closed,blacklist'
     .split(',').map(t=>`<option value="${t}">${t}</option>`).join('');
-  $('#ktable').innerHTML = `<thead><tr><th style="width:180px">Name</th><th style="width:190px">Company</th>
-    <th style="width:200px">Title</th><th style="width:110px">Desk</th><th style="width:90px">Level</th>
-    <th style="width:230px">Email</th><th style="width:150px">Hook</th>
-    <th style="width:130px">Status</th><th style="width:60px">Prio</th><th></th></tr></thead><tbody>`+
+  // Location and level come from the harvesters; showing them is the whole
+  // point of collecting them, so they are columns and not hidden in a modal.
+  $('#ktable').innerHTML = `<thead><tr><th style="width:170px">Name</th><th style="width:180px">Company</th>
+    <th style="width:180px">Title</th><th style="width:100px">Desk</th><th style="width:110px">Level</th>
+    <th style="width:150px">Location</th>
+    <th style="width:215px">Email</th><th style="width:130px">Hook</th>
+    <th style="width:120px">Status</th><th style="width:55px">Prio</th><th></th></tr></thead><tbody>`+
     rows.map(r=>`<tr>
       <td><input class="cell" value="${esc(r.first_name)}" data-id="${r.id}" data-f="first_name">
           <input class="cell" value="${esc(r.last_name)}" data-id="${r.id}" data-f="last_name"></td>
       <td><input class="cell" value="${esc(r.company_name||'')}" data-id="${r.id}" data-f="company_name"></td>
-      <td><input class="cell" value="${esc(r.job_title||'')}" data-id="${r.id}" data-f="job_title"></td>
+      <td><input class="cell" value="${esc(r.job_title||'')}" data-id="${r.id}" data-f="job_title"
+          title="${esc(r.position_raw||'')}"></td>
       <td><input class="cell" value="${esc(r.desk||'')}" data-id="${r.id}" data-f="desk"></td>
-      <td><input class="cell" value="${esc(r.seniority||'')}" data-id="${r.id}" data-f="seniority"></td>
-      <td><input class="cell" value="${esc(r.email||'')}" placeholder="${esc(r.email_guess||'')}" data-id="${r.id}" data-f="email"></td>
+      <td><input class="cell" value="${esc(r.seniority_level||r.seniority||'')}" data-id="${r.id}" data-f="seniority_level"></td>
+      <td><input class="cell" value="${esc(r.city||'')}" data-id="${r.id}" data-f="city"
+          title="${esc(r.location_raw||'')}"></td>
+      <td><input class="cell" value="${esc(r.email||'')}" placeholder="${esc(r.email_guess||'')}" data-id="${r.id}" data-f="email">
+          ${emailBadge(r.email_status)}</td>
       <td><input class="cell" value="${esc(r.hook||'')}" data-id="${r.id}" data-f="hook"></td>
       <td><select class="cell" data-id="${r.id}" data-f="status">${statuses.replace(`value="${r.status||''}"`,`value="${r.status||''}" selected`)}}</select></td>
       <td><input class="cell" value="${esc(r.priority)}" data-id="${r.id}" data-f="priority" style="width:50px"></td>

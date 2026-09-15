@@ -1013,12 +1013,12 @@ class TestProgressiveHarvest(unittest.TestCase):
         from contextlib import redirect_stdout
         args = {"tier": None, "company": "Jane Street", "limit": None, "budget": 25.0,
                 "refresh_days": 30, "force_refresh": False, "only_missing": False,
-                "enrich": False, "company_enrich": False, "dry_run": False,
-                "api_key": None, "limit_emails": 10}
+                "enrich": False, "dry_run": False, "api_key": None,
+                "limit_emails": 10}
         args.update(over)
         buf = io.StringIO()
         with redirect_stdout(buf):
-            code = self.harvest.cmd_harvest(type("A", (), args))
+            code = self.harvest.run_hunter(type("A", (), args))
         return code, buf.getvalue()
 
     def test_first_run_adds_people_and_learns_the_pattern(self):
@@ -1050,7 +1050,7 @@ class TestProgressiveHarvest(unittest.TestCase):
         _, out = self._run()
         self.assertEqual(len(self.fake.calls), 0,
                          "a fresh firm must not be re-fetched")
-        self.assertIn("skipped as already fresh", out)
+        self.assertIn("already fresh", out)
         self.assertEqual(db.credits_spent("hunter"), spent_after_first)
         self.assertGreater(n_calls, 0)
 
@@ -1098,7 +1098,7 @@ class TestProgressiveHarvest(unittest.TestCase):
         db.execute("UPDATE companies SET domain='x.com' WHERE name='Barclays'")
         code, out = self._run(company=None, tier=1, budget=0.0)
         self.assertEqual(code, 0)
-        self.assertIn("Stopped at", out)
+        self.assertIn("budget reached", out)
         self.assertEqual(db.credits_spent("hunter"), 0)
 
     def test_enrichment_fills_location(self):
@@ -1108,10 +1108,17 @@ class TestProgressiveHarvest(unittest.TestCase):
         self.assertEqual(anna["city"], "London")
         self.assertEqual(anna["country_code"], "GB")
         self.assertIsNotNone(anna["enriched_at"])
-        self.assertEqual(anna["github"], "asmith")
+        self.assertEqual(anna["timezone"], "Europe/London")
+        # The verbatim title must survive untouched - it is the audit trail.
+        self.assertEqual(anna["position_raw"], "Quantitative Researcher")
 
     def test_company_enrichment_fills_the_firm_profile(self):
-        self._run(company_enrich=True)
+        """The firm profile lands on the company row, filling gaps only."""
+        import people_store
+        en = self.fake.hunter.company_enrichment("janestreet.com", api_key="k")
+        self.assertTrue(en.get("ok"), en)
+        co = db.resolve_company("Jane Street")
+        self.assertTrue(people_store.fill_company(co, en, "hunter"))
         co = db.query("SELECT * FROM companies WHERE name='Jane Street'")[0]
         self.assertEqual(co["founded_year"], 2000)
         self.assertEqual(co["industry"], "Financial Services")
@@ -1137,6 +1144,249 @@ class TestProgressiveHarvest(unittest.TestCase):
         second = db.ensure_schema()
         self.assertEqual(first, [])
         self.assertEqual(second, [])
+
+
+class TestEmailConvention(unittest.TestCase):
+    """Learn a firm's address format once, then resolve any name for free."""
+
+    def setUp(self):
+        db.ensure_schema()
+        db.execute("UPDATE companies SET email_pattern='', pattern_confidence=0, "
+                   "pattern_source='', pattern_sample='' WHERE name='Amundi'")
+        self.co = db.resolve_company("Amundi")
+
+    def tearDown(self):
+        db.execute("UPDATE companies SET email_pattern='', pattern_confidence=0, "
+                   "pattern_source='', pattern_sample='' WHERE name='Amundi'")
+
+    def test_one_real_address_teaches_the_whole_firm(self):
+        """The user's example: firstname.lastname@amundi.com."""
+        import email_pattern
+        r = email_pattern.learn_from_person("Jane", "Doe", "jane.doe@amundi.com", self.co)
+        self.assertTrue(r["learned"], r)
+        self.assertEqual(r["pattern"], "first.last")
+        self.assertGreaterEqual(r["confidence"], 0.9)
+
+        firm = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+        self.assertEqual(firm["email_pattern"], "first.last")
+        self.assertEqual(firm["pattern_sample"], "jane.doe@amundi.com")
+
+    def test_a_later_name_is_resolved_without_any_api_call(self):
+        import email_pattern
+        email_pattern.learn_from_person("Jane", "Doe", "jane.doe@amundi.com", self.co)
+        firm = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+        self.assertEqual(email_pattern.reconstruct("Marc", "Dupont", firm),
+                         "marc.dupont@amundi.com")
+
+    def test_other_conventions_are_recognised(self):
+        import email_pattern
+        for addr, expected in (("jdoe@amundi.com", "flast"),
+                               ("janedoe@amundi.com", "firstlast"),
+                               ("j.doe@amundi.com", "f.last"),
+                               ("doe.jane@amundi.com", "last.first")):
+            db.execute("UPDATE companies SET email_pattern='', pattern_confidence=0 "
+                       "WHERE name='Amundi'")
+            firm = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+            r = email_pattern.learn_from_person("Jane", "Doe", addr, firm)
+            self.assertEqual(r["pattern"], expected, addr)
+
+    def test_an_address_that_does_not_match_the_name_teaches_nothing(self):
+        """Guessing here would silently mis-address everyone at the firm."""
+        import email_pattern
+        firm = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+        r = email_pattern.learn_from_person("Jane", "Doe", "jane.doe@amundi.com", firm)
+        self.assertTrue(r["learned"])
+        before = db.query("SELECT email_pattern FROM companies WHERE name='Amundi'")[0]
+        r2 = email_pattern.learn_from_person("Jane", "Doe", "totally unrelated@amundi.com",
+                                             firm)
+        self.assertFalse(r2["learned"])
+        after = db.query("SELECT email_pattern FROM companies WHERE name='Amundi'")[0]
+        self.assertEqual(before["email_pattern"], after["email_pattern"])
+
+    def test_a_stronger_pattern_is_never_downgraded(self):
+        import email_pattern
+        firm = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+        email_pattern.learn_from_person("Jane", "Doe", "jane.doe@amundi.com", firm)
+        self.assertFalse(email_pattern.store(firm, "flast", 0.5, "shape heuristic"))
+        self.assertEqual(
+            db.query("SELECT email_pattern FROM companies WHERE name='Amundi'")[0]["email_pattern"],
+            "first.last")
+
+    def test_a_domain_is_not_matched_on_a_loose_suffix(self):
+        """'brandnewfirm.com' must not resolve to some firm ending in 'firm.com'.
+
+        A person filed under the wrong employer is worse than a person we fail
+        to file at all, so the lookup walks real dot boundaries only.
+        """
+        import email_pattern
+        hit = email_pattern.company_for_domain("notaqrfirm.com")
+        self.assertIsNone(hit, hit)
+
+    def test_a_mail_subdomain_still_finds_its_firm(self):
+        import email_pattern
+        hit = email_pattern.company_for_domain("mail.bnpparibas.com")
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit["name"], "BNP Paribas")
+
+    def test_no_convention_means_no_address_not_a_plausible_one(self):
+        import email_pattern
+        firm = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+        self.assertEqual(email_pattern.reconstruct("Jane", "Doe", firm), "")
+
+
+class TestPeopleStore(unittest.TestCase):
+    """Identity and merge: one human, one row, and never overwrite a human."""
+
+    def setUp(self):
+        db.ensure_schema()
+        db.execute("DELETE FROM contacts WHERE company_name='Amundi'")
+        db.execute("DELETE FROM person_job_history")
+        self.co = db.resolve_company("Amundi")
+
+    def tearDown(self):
+        db.execute("DELETE FROM contacts WHERE company_name='Amundi'")
+        db.execute("DELETE FROM person_job_history")
+
+    def test_the_same_person_from_two_providers_is_one_row(self):
+        import people_store
+        people_store.upsert({"first_name": "Jane", "last_name": "Doe",
+                             "linkedin_url": "https://www.linkedin.com/in/janedoe",
+                             "job_title": "Quantitative Researcher"}, self.co, "hunter")
+        outcome, _ = people_store.upsert(
+            {"first_name": "Jane", "last_name": "Doe",
+             "linkedin_url": "http://linkedin.com/in/janedoe/",
+             "job_title": "Quantitative Researcher",
+             "city": "London"}, self.co, "prospeo")
+        self.assertEqual(outcome, "updated")
+        rows = db.query("SELECT * FROM contacts WHERE company_name='Amundi'")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["city"], "London")
+        self.assertIn("hunter", rows[0]["sources"])
+        self.assertIn("prospeo", rows[0]["sources"])
+
+    def test_harvested_data_never_overwrites_a_curated_field(self):
+        import people_store
+        db.execute("INSERT INTO contacts (first_name,last_name,company_id,company_name,"
+                   "job_title,city,linkedin_url,source) VALUES "
+                   "('Jane','Doe',?,?,'Head of Research','Paris','my-url','pasted')",
+                   [self.co["id"], self.co["name"]])
+        people_store.upsert({"first_name": "Jane", "last_name": "Doe",
+                             "linkedin_url": "my-url", "job_title": "Trader",
+                             "city": "London"}, self.co, "prospeo")
+        row = db.query("SELECT * FROM contacts WHERE company_name='Amundi'")[0]
+        self.assertEqual(row["job_title"], "Head of Research")
+        self.assertEqual(row["city"], "Paris")
+
+    def test_a_guessed_address_is_upgraded_but_a_verified_one_is_not(self):
+        import people_store
+        db.execute("INSERT INTO contacts (first_name,last_name,company_id,company_name,"
+                   "email,email_status,source) VALUES ('Jane','Doe',?,?,"
+                   "'jdoe@amundi.com','guessed','pattern')", [self.co["id"], self.co["name"]])
+        people_store.upsert({"first_name": "Jane", "last_name": "Doe",
+                             "email": "jane.doe@amundi.com",
+                             "email_verification": "valid"}, self.co, "hunter")
+        row = db.query("SELECT * FROM contacts WHERE company_name='Amundi'")[0]
+        self.assertEqual(row["email"], "jane.doe@amundi.com")
+        self.assertEqual(row["email_status"], "verified")
+
+    def test_a_masked_address_is_not_stored(self):
+        """'s****@firm.com' is not an address. Storing it would poison the column."""
+        import people_store
+        people_store.upsert({"first_name": "Stefano", "last_name": "Iannalfo",
+                             "email": "s********@amundi.com"}, self.co, "prospeo")
+        row = db.query("SELECT * FROM contacts WHERE company_name='Amundi'")[0]
+        self.assertEqual(row["email"] or "", "")
+        self.assertEqual(row["email_status"], "missing")
+
+    def test_career_history_is_stored_and_replaced_not_duplicated(self):
+        import people_store
+        outcome, cid = people_store.upsert(
+            {"first_name": "Jane", "last_name": "Doe", "job_title": "Quant"}, self.co, "prospeo")
+        hist = [{"title": "Analyst", "company_name": "BNP Paribas", "start_year": 2018,
+                 "end_year": 2020, "is_current": False},
+                {"title": "Quant", "company_name": "Amundi", "start_year": 2020,
+                 "is_current": True}]
+        self.assertEqual(people_store.save_job_history(cid, hist, "prospeo"), 2)
+        self.assertEqual(people_store.save_job_history(cid, hist, "prospeo"), 2)
+        rows = db.query("SELECT * FROM person_job_history WHERE contact_id=?", [cid])
+        self.assertEqual(len(rows), 2, "re-enrichment must not duplicate roles")
+        current = [r for r in rows if r["is_current"]]
+        self.assertEqual(current[0]["company_name"], "Amundi")
+
+    def test_position_raw_survives_verbatim(self):
+        import people_store
+        people_store.upsert({"first_name": "Jane", "last_name": "Doe",
+                             "position_raw": "VP - Index Equity Portfolio Management",
+                             "job_title": "VP"}, self.co, "prospeo")
+        row = db.query("SELECT * FROM contacts WHERE company_name='Amundi'")[0]
+        self.assertEqual(row["position_raw"], "VP - Index Equity Portfolio Management")
+
+
+class TestProspeoProvider(unittest.TestCase):
+    """Prospeo returns masked data until you pay to reveal it. Handle that."""
+
+    def test_masked_email_and_phone_are_dropped(self):
+        from providers import prospeo
+        p = prospeo.normalise_person({
+            "person": {"full_name": "Stefano Iannalfo", "first_name": "Stefano",
+                       "last_name": "Iannalfo", "current_job_title": "VP",
+                       "email": {"status": "VERIFIED", "email": "s********@blackrock.com"},
+                       "mobile": {"status": "VERIFIED", "mobile": "+44 7477 ******"},
+                       "location": {"city": "London", "country_code": "GB"}},
+            "company": {"name": "BlackRock", "domain": "blackrock.com"}})
+        self.assertEqual(p["email"], "")
+        self.assertTrue(p["email_masked"])
+        self.assertEqual(p["phone"], "")
+        self.assertEqual(p["city"], "London")
+        self.assertEqual(p["country_code"], "GB")
+        self.assertEqual(p["position_raw"], "VP")
+
+    def test_a_revealed_email_is_kept(self):
+        from providers import prospeo
+        p = prospeo.normalise_person({
+            "person": {"first_name": "Jane", "last_name": "Doe",
+                       "email": {"status": "VERIFIED", "email": "jane.doe@firm.com"}},
+            "company": {"name": "Firm"}})
+        self.assertEqual(p["email"], "jane.doe@firm.com")
+        self.assertEqual(p["email_verification"], "verified")
+
+    def test_job_history_is_normalised(self):
+        from providers import prospeo
+        p = prospeo.normalise_person({
+            "person": {"first_name": "Jane", "last_name": "Doe",
+                       "job_history": [{"title": "Analyst", "company_name": "BNP",
+                                        "current": False, "start_year": 2018,
+                                        "end_year": 2020, "seniority": "Analyst"},
+                                       {"title": "Quant", "company_name": "Amundi",
+                                        "current": True, "start_year": 2020}]},
+            "company": {"name": "Amundi"}})
+        self.assertEqual(len(p["job_history"]), 2)
+        self.assertTrue(p["job_history"][1]["is_current"])
+        self.assertEqual(p["job_history"][0]["company_name"], "BNP")
+
+    def test_company_profile_is_normalised(self):
+        from providers import prospeo
+        c = prospeo.normalise_company({
+            "name": "BlackRock", "domain": "blackrock.com", "founded": 1988,
+            "industry": "Financial Services", "employee_count": 33903,
+            "employee_range": "10000+", "revenue_range_printed": "10B+",
+            "location": {"city": "Manhattan", "country": "United States"},
+            "technology": {"technology_names": ["Proofpoint"]},
+            "job_postings": {"active_count": 421}})
+        self.assertEqual(c["founded_year"], 1988)
+        self.assertEqual(c["headcount"], "10000+")
+        self.assertEqual(c["revenue_printed"], "10B+")
+        self.assertEqual(c["job_postings_count"], 421)
+        self.assertEqual(c["hq_city"], "Manhattan")
+
+    def test_an_unknown_firm_is_added_as_a_discovery(self):
+        import people_store
+        co, created = people_store.resolve_or_create_company(
+            domain="brandnewfirm.com", name="Brand New Firm")
+        self.assertTrue(created)
+        self.assertEqual(co["tier"], 3)          # a discovery, not a target yet
+        self.assertEqual(co["status"], "to_research")
+        db.execute("DELETE FROM companies WHERE domain='brandnewfirm.com'")
 
 
 if __name__ == "__main__":

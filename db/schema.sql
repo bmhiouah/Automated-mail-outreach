@@ -33,6 +33,19 @@ CREATE TABLE IF NOT EXISTS companies (
   linkedin_url       TEXT,
   twitter            TEXT,
   ticker             TEXT,
+  -- Prospeo firm data
+  website            TEXT,
+  logo_url           TEXT,
+  revenue_printed    TEXT,                 -- "10B+"
+  funding_total      INTEGER,
+  technologies       TEXT,                 -- comma separated stack
+  job_postings_count INTEGER,              -- live hiring signal
+  prospeo_id         TEXT,
+  -- The email convention, learned once and reused forever. A firm's address
+  -- format is a property of the FIRM, not the person, so it lives here: once
+  -- one real address is known, every future first+last name can be resolved.
+  pattern_source     TEXT,                 -- which call taught us this
+  pattern_sample     TEXT,                 -- the address that proved it
   source             TEXT,                 -- which provider filled this
   source_updated     TEXT,
   created_at         TEXT DEFAULT CURRENT_TIMESTAMP,
@@ -63,52 +76,72 @@ CREATE TABLE IF NOT EXISTS contacts (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   first_name    TEXT NOT NULL,
   last_name     TEXT NOT NULL,
-  job_title     TEXT,
-  desk          TEXT,                     -- Equity Derivatives, Systematic Macro, FX Options...
-  seniority     TEXT,                     -- analyst|associate|VP|director|MD|head|partner
+  full_name     TEXT,
   company_id    INTEGER REFERENCES companies(id) ON DELETE SET NULL,
   company_name  TEXT,                     -- kept denormalised so imports never fail
-  city          TEXT,
-  country       TEXT,
-  email         TEXT,
-  email_status  TEXT DEFAULT 'unknown',   -- unknown|guessed|verified|bounced|missing
-  email_source  TEXT,
-  linkedin_url  TEXT,
   hook          TEXT,                     -- one-line personalisation angle, injected in emails
   source        TEXT,                     -- linkedin|alumni|conference|referral|website|other
   priority      INTEGER DEFAULT 3,        -- 1 = contact first
   status        TEXT DEFAULT 'identified', -- identified|ready|contacted|replied|positive|negative|closed|blacklist
   tags          TEXT,
   notes         TEXT,
-  -- harvested person data (Hunter Domain Search + Email Enrichment). Kept flat
-  -- here rather than as one JSON blob so "quants in London with a maths
-  -- background" is an ordinary WHERE clause, not a text search.
-  middle_name       TEXT,
-  headline          TEXT,                 -- position_raw, exactly as Hunter saw it
-  role              TEXT,                 -- Hunter's own role classification
-  department        TEXT,                 -- Hunter department (it|finance|research|...)
-  seniority_level   TEXT,                 -- junior|senior|executive (Hunter's)
-  decision_maker    INTEGER,              -- 1/0, as classified by Hunter
-  location_raw      TEXT,                 -- "Framingham, Massachusetts, United States"
+  -- ------------------------------------------------- what they do
+  job_title         TEXT,                 -- cleaned current title
+  position_raw      TEXT,                 -- VERBATIM, exactly as the source wrote it.
+                                          -- Never tidied, never overwritten by a
+                                          -- cleaner guess: it is the audit trail
+                                          -- behind every derived field below.
+  headline          TEXT,                 -- LinkedIn headline; richer than the title,
+                                          -- often names the desk and the firm
+  department        TEXT,                 -- provider taxonomy: it|finance|research|...
+  seniority_level   TEXT,                 -- the provider's own word: senior|executive|...
+  seniority         TEXT,                 -- this app's vocabulary: analyst|VP|head|...
+  desk              TEXT,                 -- derived: Rates|Credit|Systematic|...
+  -- ------------------------------------------------- where they are
+  city              TEXT,
   state             TEXT,
+  country           TEXT,
   country_code      TEXT,
-  latitude          REAL,
-  longitude         REAL,
+  location_raw      TEXT,                 -- "New York City Metropolitan Area"
   timezone          TEXT,
-  twitter           TEXT,
-  github            TEXT,
-  phone             TEXT,
-  avatar            TEXT,
-  bio               TEXT,
-  email_confidence  INTEGER,              -- Hunter confidence, 0-100
+  -- ------------------------------------------------- how to reach them
+  email             TEXT,
+  email_status      TEXT DEFAULT 'unknown', -- unknown|guessed|verified|bounced|missing
+  email_source      TEXT,
+  email_confidence  INTEGER,              -- 0-100 as reported by the provider
   email_verified_at TEXT,
-  last_seen_at      TEXT,                 -- activeAt
-  enriched_at       TEXT,                 -- when enrichment last ran on this person
-  evidence          TEXT,                 -- JSON: where each field came from
+  phone             TEXT,
+  linkedin_url      TEXT,
+  -- ------------------------------------------------- provenance
+  sources           TEXT,                 -- "hunter,prospeo" — who contributed
+  source_ids        TEXT,                 -- JSON {"prospeo": "id"} so we can re-enrich
+  last_seen_at      TEXT,                 -- provider's last-activity signal
+  enriched_at       TEXT,                 -- when we last enriched this person
   source_updated    TEXT,
   created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at        TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (first_name, last_name, company_name)
+);
+
+-- Career history. This is the "professional background" half of the database and
+-- the thing Hunter cannot supply at all; Prospeo returns up to 5 past roles per
+-- person. Stored as rows, not JSON, so "who has moved from a bank to a fund" is
+-- a join and not a text search.
+CREATE TABLE IF NOT EXISTS person_job_history (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_id      INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  title           TEXT,
+  company_name    TEXT,
+  company_id      INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+  seniority       TEXT,
+  start_year      INTEGER,
+  start_month     INTEGER,
+  end_year        INTEGER,
+  end_month       INTEGER,
+  duration_months INTEGER,
+  is_current      INTEGER DEFAULT 0,
+  source          TEXT,
+  created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ---------------------------------------------------------------- TEMPLATES

@@ -23,6 +23,12 @@ app/server.py      stdlib HTTP server + JSON API (no dependencies)
 app/tools.py       CLI: brief, dupes, backup, hooks
 app/cv_parse.py    reads a pasted CV and proposes profile fields
 app/discover_careers.py   finds each firm's real careers page (HTTP-verified)
+app/harvest.py     the harvester: fills the database from the providers
+app/net.py         the one HTTP door: retry, backoff, per-host throttle
+app/email_pattern.py   learns a firm's address format, rebuilds addresses
+app/people_store.py    identity resolution and merge rules
+app/providers/hunter.py    Hunter.io — firm email conventions, bulk domains
+app/providers/prospeo.py   Prospeo — targeted people, career history, phones
 app/test_core.py   test suite, runs on a temp DB
 web/index.html     the UI
 db/schema.sql      full schema
@@ -34,8 +40,75 @@ data/careers_urls.csv     83 verified careers pages (tier 1 complete, tier 2 par
 data/cold_approach.db     your data (only real file that matters — back it up)
 ```
 
-Tables: `companies` · `contacts` · `outreach` · `templates` · `profile` ·
-`applications` · `pattern_evidence`.
+Tables: `companies` · `contacts` · `person_job_history` · `outreach` · `templates` ·
+`profile` · `applications` · `pattern_evidence` · `fetch_log` · `raw_payload`.
+
+## Harvesting — how the database fills itself
+
+You run one command; the database grows. Run it again and it resumes instead of
+starting over.
+
+```bash
+python3 app/harvest.py --source prospeo --pages 2        # find quant people
+python3 app/harvest.py --source hunter  --tier 1         # firm email conventions
+python3 app/harvest.py --status                          # how full is it
+python3 app/harvest.py --reconstruct                     # rebuild addresses
+```
+
+Two providers, each used for what it is actually good at:
+
+- **Prospeo finds the right people.** It filters by job title *and* location, so
+  you get quants in London rather than whoever a firm happens to employ. It also
+  supplies career history, phone numbers and the firm profile. Hunter cannot do
+  any of this.
+- **Hunter knows the firm's address format.** Its Domain Search returns
+  `data.pattern` (`{first}.{last}`) for free, which is the seed for the whole
+  reconstruction engine below.
+
+### The email convention — the part that compounds
+
+A firm's address format belongs to the **firm**, so it lives on the company row.
+Once one real address is known there, every later person can be addressed for
+free:
+
+```
+one real address  jane.doe@amundi.com  →  companies.email_pattern = "first.last"
+                                       →  Marc Dupont → marc.dupont@amundi.com
+```
+
+Learned deterministically: we test every known convention against the real
+(name, address) pair. Exactly one match is a proof (0.95). Several matches is
+genuine but ambiguous evidence (0.6) — `annasmith` is both `firstlast` and
+`flast`. No match teaches nothing rather than guessing, because a wrong
+convention silently mis-addresses everyone at that firm.
+
+Reconstructed addresses are written as `email_status = 'guessed'`, never
+`'verified'`, so a guess can never overwrite real evidence.
+
+### Never pay twice
+
+Every call goes through `fetch_log` and its raw response is kept under
+`data/raw/<provider>/`. A request already made is not made again, so a second
+run over the same firms makes zero calls and spends zero credits. `--budget` is
+a hard stop, and the next run picks up where it left off.
+
+### What nothing can tell us
+
+Neither provider sells **education** or degrees. `seniority` is derived from
+titles and is crude — "Vice President Middle Office" is not C-suite — so
+`seniority_level` (the provider's own word) and `position_raw` (verbatim) are
+kept alongside it, and the verbatim title is never rewritten. If you need
+education, that needs a third source (OpenAlex/arXiv).
+
+### Keys
+
+Both keys live in `config.json`, which is gitignored and `chmod 600`:
+
+```json
+{ "hunter_api_key": "...", "prospeo_api_key": "..." }
+```
+
+They are never written to the database, never printed, and never logged.
 
 ## Roadmap
 

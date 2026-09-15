@@ -1,8 +1,18 @@
-# Hunter API key — never commit this
+# API keys — never commit these
 config.json
 
-# Raw API responses kept by the harvester (data/raw/<provider>/...)
+# Raw API responses kept by the harvesters (data/raw/<provider>/...)
 data/raw/
+
+# Scratch output from the Prospeo notebook (contains real people's data)
+prospeo_*.json
+
+# SQLite WAL sidecars
+data/*.db-wal
+data/*.db-shm
+
+# Browser profile left by a scraping experiment
+chrome_profile/
 
 # Python
 __pycache__/

@@ -231,15 +231,31 @@ COMPANY_EXTRA_COLUMNS = [
     "industry TEXT", "company_type TEXT", "keywords TEXT", "address TEXT",
     "linkedin_url TEXT", "twitter TEXT", "ticker TEXT", "source TEXT",
     "source_updated TEXT",
+    # Prospeo firm data
+    "website TEXT", "logo_url TEXT", "revenue_printed TEXT", "funding_total INTEGER",
+    "technologies TEXT", "job_postings_count INTEGER", "prospeo_id TEXT",
+    # email convention provenance
+    "pattern_source TEXT", "pattern_sample TEXT",
 ]
 
 CONTACT_EXTRA_COLUMNS = [
-    "middle_name TEXT", "headline TEXT", "role TEXT", "department TEXT",
-    "seniority_level TEXT", "decision_maker INTEGER", "location_raw TEXT", "state TEXT",
-    "country_code TEXT", "latitude REAL", "longitude REAL", "timezone TEXT",
-    "twitter TEXT", "github TEXT", "phone TEXT", "avatar TEXT", "bio TEXT",
+    "full_name TEXT", "headline TEXT", "department TEXT",
+    "seniority_level TEXT", "location_raw TEXT", "state TEXT",
+    "country_code TEXT", "timezone TEXT", "phone TEXT",
     "email_confidence INTEGER", "email_verified_at TEXT", "last_seen_at TEXT",
-    "enriched_at TEXT", "evidence TEXT", "source_updated TEXT",
+    "enriched_at TEXT", "sources TEXT", "source_ids TEXT", "source_updated TEXT",
+    # position_raw is the verbatim title - the one field that must never be
+    # normalised, because it is what every derived field can be checked against.
+    "position_raw TEXT",
+]
+
+# Columns that turned out to carry nothing. Verified empty across the first
+# real harvest (30 contacts): evidence/avatar/bio/role/middle_name/twitter/
+# github were never populated by any provider, decision_maker is irrelevant to
+# a job search, and lat/long duplicate city/state/country for our purposes.
+CONTACT_DEAD_COLUMNS = [
+    "middle_name", "role", "decision_maker", "twitter", "github",
+    "avatar", "bio", "evidence", "latitude", "longitude",
 ]
 
 
@@ -255,8 +271,28 @@ def ensure_schema(verbose=False):
     added = []
     added += ensure_columns("companies", COMPANY_EXTRA_COLUMNS)
     added += ensure_columns("contacts", CONTACT_EXTRA_COLUMNS)
+
+    # The first harvest stored Hunter's verbatim title in `headline`. It belongs
+    # in position_raw now that we have a column for it, and moving it means the
+    # existing rows keep their audit trail instead of losing it.
+    moved = execute("UPDATE contacts SET position_raw=COALESCE(position_raw, headline) "
+                    "WHERE position_raw IS NULL OR position_raw=''")
+
+    dropped = []
+    for col in CONTACT_DEAD_COLUMNS:
+        if col in _columns_of("contacts"):
+            try:
+                execute(f"ALTER TABLE contacts DROP COLUMN {col}")
+                dropped.append(col)
+            except sqlite3.OperationalError:
+                pass          # indexed or referenced: leave it, it is harmless
     if verbose:
-        print(f"schema: {len(added)} columns added" + (f" ({', '.join(added)})" if added else ""))
+        if added:
+            print(f"schema: {len(added)} columns added ({', '.join(added)})")
+        if dropped:
+            print(f"schema: {len(dropped)} empty columns dropped ({', '.join(dropped)})")
+        if moved:
+            print(f"schema: position_raw backfilled for {moved} existing contacts")
     return added
 
 

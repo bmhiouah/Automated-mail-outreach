@@ -18,6 +18,11 @@ import cv_parse
 import db
 import email_gen
 import people_parse
+# The email convention lives in one place now, so the guesser, the paste
+# importer and the harvester can never drift apart.
+from email_pattern import (PATTERNS, _alpha, _clean_domain, guess_email,   # noqa: E401
+                           infer_pattern, company_for_domain,
+                           learn_patterns_from_samples, apply_guesses)
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(BASE, "web")
@@ -34,11 +39,11 @@ CONTACT_FIELDS = ["first_name", "last_name", "job_title", "desk", "seniority",
                   "company_id", "company_name", "city", "country", "email",
                   "email_status", "email_source", "linkedin_url", "hook",
                   "source", "priority", "status", "tags", "notes",
-                  # harvested person data
-                  "middle_name", "headline", "role", "department", "seniority_level",
-                  "decision_maker", "location_raw", "state", "country_code",
-                  "latitude", "longitude", "timezone", "twitter", "github",
-                  "phone", "avatar", "bio", "email_confidence"]
+                  # harvested person data (see app/providers/)
+                  "full_name", "position_raw", "headline", "department",
+                  "seniority_level", "location_raw", "state", "country_code",
+                  "timezone", "phone", "email_confidence", "email_verified_at",
+                  "sources", "last_seen_at", "enriched_at"]
 OUTREACH_FIELDS = ["contact_id", "channel", "template_id", "subject", "body",
                    "status", "sent_at", "followup_stage", "next_followup_at",
                    "replied_at", "reply_snippet", "outcome", "notes"]
@@ -158,207 +163,6 @@ def enrich_contact(contact):
     return contact
 
 
-PATTERNS = {
-    "first.last": lambda f, l: f"{f}.{l}",
-    "first_last": lambda f, l: f"{f}_{l}",
-    "f.last": lambda f, l: f"{f[0]}.{l}" if f else "",
-    "flast": lambda f, l: f"{f[0]}{l}" if f else "",
-    "firstlast": lambda f, l: f"{f}{l}",
-    "firstl": lambda f, l: f"{f}{l[0]}" if l else "",
-    "last.first": lambda f, l: f"{l}.{f}",
-    "lastfirst": lambda f, l: f"{l}{f}",
-    "first": lambda f, l: f,
-}
-
-
-def _alpha(s):
-    return "".join(ch for ch in (s or "").strip().lower() if ch.isalpha())
-
-
-def guess_email(contact, company):
-    """Build a best-guess address from the company pattern."""
-    if not company or not company.get("domain"):
-        return ""
-    first = _alpha(contact.get("first_name"))
-    last = _alpha(contact.get("last_name"))
-    if not first or not last:
-        return ""
-    pattern = (company.get("email_pattern") or "").strip().lower()
-    domain = _clean_domain(company["domain"])
-    fn = PATTERNS.get(pattern)
-    if not fn or not domain:
-        return ""
-    local = fn(first, last)
-    return f"{local}@{domain}" if local else ""
-
-
-def _clean_domain(domain):
-    d = (domain or "").strip().lower()
-    for prefix in ("https://", "http://", "www."):
-        if d.startswith(prefix):
-            d = d[len(prefix):]
-    return d.strip("/").split("/")[0]
-
-
-def infer_pattern(company_id, sample_email, min_confidence=0.0):
-    """Learn a firm's email convention from one real address.
-
-    Strongest signal: the sample matches a contact we already have at that firm.
-    Falls back to shape heuristics (separator, length) with low confidence.
-
-    `min_confidence` lets a caller collect the evidence without applying it -
-    the paste importer uses this so a bare address never silently becomes the
-    firm's convention on a 0.5 guess.
-    """
-    sample = (sample_email or "").strip().lower()
-    if "@" not in sample:
-        return {"error": "not a valid email address"}
-    local, domain = sample.rsplit("@", 1)
-    local = local.strip()
-    domain = _clean_domain(domain)
-
-    rows = db.query("SELECT * FROM companies WHERE id=?", [company_id])
-    if not rows:
-        return {"error": "company not found"}
-    company = rows[0]
-
-    contacts = db.query("SELECT * FROM contacts WHERE company_id=?", [company_id])
-    matches = []
-    for c in contacts:
-        f, l = _alpha(c["first_name"]), _alpha(c["last_name"])
-        if not f or not l:
-            continue
-        for name, fn in PATTERNS.items():
-            if fn(f, l) == local:
-                matches.append((name, f"{c['first_name']} {c['last_name']}"))
-
-    if matches:
-        counts = {}
-        for name, _ in matches:
-            counts[name] = counts.get(name, 0) + 1
-        pattern = max(counts.items(), key=lambda kv: kv[1])[0]
-        confidence = 0.95 if counts[pattern] > 1 else 0.85
-        evidence_source = "matched " + ", ".join(sorted({m[1] for m in matches})[:3])
-        note = f"inferred from sample {sample}"
-    else:
-        pattern, confidence, note = _shape_heuristic(local)
-        evidence_source = "shape heuristic (no contact match)"
-
-    if not company.get("domain"):
-        db.execute("UPDATE companies SET domain=?, updated_at=? WHERE id=?",
-                   [domain, now_iso(), company_id])
-    applied = confidence >= min_confidence
-    if applied:
-        db.execute("UPDATE companies SET email_pattern=?, pattern_confidence=?, updated_at=? WHERE id=?",
-                   [pattern, confidence, now_iso(), company_id])
-        db.execute(
-            "INSERT INTO pattern_evidence (company_id, pattern, sample_email, source, confidence, notes) "
-            "VALUES (?,?,?,?,?,?)",
-            [company_id, pattern, sample, evidence_source, confidence, note])
-
-    unlocked = db.query(
-        "SELECT COUNT(*) n FROM contacts WHERE company_id=? "
-        "AND (email IS NULL OR email='')", [company_id])[0]["n"]
-    return {
-        "pattern": pattern,
-        "domain": domain,
-        "confidence": confidence,
-        "source": evidence_source,
-        "note": note,
-        "applied": applied,
-        "unlocked_contacts": unlocked,
-        "candidates": sorted(PATTERNS.keys()),
-    }
-
-
-def company_for_domain(domain):
-    """Find the firm that owns an email domain."""
-    d = _clean_domain(domain)
-    if not d:
-        return None
-    rows = db.query("SELECT * FROM companies WHERE lower(domain)=?", [d])
-    if rows:
-        return rows[0]
-    # mail.janestreet.com or janestreet.co.uk should still find Jane Street
-    rows = db.query(
-        "SELECT * FROM companies WHERE lower(domain) LIKE ? OR ? LIKE '%' || lower(domain)",
-        ["%" + d, d])
-    return rows[0] if rows else None
-
-
-def learn_patterns_from_samples(samples):
-    """Try to learn a firm's convention from real addresses with no name.
-
-    Only the strong path is applied (an address whose local part matches a
-    contact at that firm). A bare address tells you the domain and nothing
-    about the convention, so the shape guess is reported, not saved.
-    """
-    learned, skipped, seen = [], [], set()
-    for s in samples or []:
-        email = (s.get("email") or "").strip().lower()
-        if "@" not in email:
-            continue
-        domain = _clean_domain(email.rsplit("@", 1)[1])
-        if not domain or domain in seen:
-            continue
-        seen.add(domain)
-        co = company_for_domain(domain)
-        if not co:
-            skipped.append({"email": email, "reason": "no firm in the seed uses that domain"})
-            continue
-        res = infer_pattern(co["id"], email, min_confidence=0.85)
-        if res.get("error"):
-            skipped.append({"email": email, "reason": res["error"]})
-        elif res.get("applied"):
-            learned.append({"company": co["name"], "pattern": res["pattern"],
-                            "confidence": res["confidence"], "source": res["source"],
-                            "unlocked_contacts": res["unlocked_contacts"]})
-        else:
-            skipped.append({"email": email, "company": co["name"],
-                            "reason": "address does not match a known name at that firm, "
-                                      "so the convention is still a guess"})
-    return {"learned": learned, "skipped": skipped}
-
-
-def _shape_heuristic(local):
-    """Last resort: guess the convention from the shape of one address only."""
-    if "." in local:
-        a, b = local.split(".", 1)
-        if len(a) == 1:
-            return "f.last", 0.5, "one-letter first part suggests f.last"
-        return "first.last", 0.5, "dotted address, no contact to confirm against"
-    if "_" in local:
-        return "first_last", 0.5, "underscore separator"
-    if local.isalpha():
-        return ("firstlast", 0.35,
-                "no separator - ambiguous between firstlast, flast and first; "
-                "confirm with a second sample")
-    return "first.last", 0.25, "unrecognised shape - verify manually"
-
-
-def apply_guesses(company_id=None):
-    """Write pattern-derived addresses into empty email fields, flagged as guessed."""
-    q = ("SELECT c.*, co.domain, co.email_pattern FROM contacts c "
-         "JOIN companies co ON co.id = c.company_id "
-         "WHERE (c.email IS NULL OR c.email='') AND co.email_pattern IS NOT NULL "
-         "AND co.email_pattern != '' AND co.domain IS NOT NULL AND co.domain != ''")
-    args = []
-    if company_id:
-        q += " AND c.company_id=?"
-        args.append(company_id)
-    rows = db.query(q, args)
-    n = 0
-    for r in rows:
-        email = guess_email(r, {"domain": r["domain"], "email_pattern": r["email_pattern"]})
-        if email:
-            db.execute("UPDATE contacts SET email=?, email_status='guessed', "
-                       "email_source='pattern guess', updated_at=? WHERE id=?",
-                       [email, now_iso(), r["id"]])
-            n += 1
-    return {"updated": n}
-
-
-# ----------------------------------------------------------------- api
 def api_companies(params, payload=None):
     where, args = [], []
     if params.get("ids"):
