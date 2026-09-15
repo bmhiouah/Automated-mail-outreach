@@ -7,12 +7,18 @@ data/raw/
 # Timestamped database copies from `tools.py backup`
 data/backups/
 
+# Your database: created and seeded on first launch, never versioned.
+# Back it up with `python3 app/tools.py backup`.
+data/*.db
+data/*.db-wal
+data/*.db-shm
+
 # Scratch output from the Prospeo notebook (contains real people's data)
 prospeo_*.json
 
-# SQLite WAL sidecars
-data/*.db-wal
-data/*.db-shm
+# The superseded scratch notebook (app/providers/prospeo.py is the real code).
+# Kept on disk, but it must never be committed again.
+Prospeo_API.ipynb
 
 # Browser profile left by a scraping experiment
 chrome_profile/

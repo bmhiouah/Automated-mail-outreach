@@ -1,0 +1,5 @@
+{
+  "_comment": "Copy me to config.json and paste your keys. config.json is gitignored, so your keys never leave this machine.",
+  "hunter_api_key": "paste your Hunter.io key here",
+  "prospeo_api_key": "paste your Prospeo key here"
+}

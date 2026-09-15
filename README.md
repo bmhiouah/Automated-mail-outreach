@@ -11,16 +11,29 @@ cd "/Users/badremhiouah/Desktop/Automatic cold approach"
 # open http://127.0.0.1:8765
 ```
 
-First launch creates `data/cold_approach.db`, loads the company seed and the four default
-email templates. Nothing leaves your machine.
+First launch creates `data/cold_approach.db`, loads the company seed and the four
+default email templates. Nothing leaves your machine. The database is not kept
+in git - it is yours, so it grows by harvesting (`python3 app/harvest.py
+--status`), and back it up with `python3 app/tools.py backup`.
+
+Your API keys live in `config.json` (gitignored - a credential, never committed).
+Copy `config.example.json` the first time: `cp config.example.json config.json`.
 
 ## Layout
 
 ```
 app/db.py          SQLite layer (schema, seed loader, query helpers)
+app/domain.py      shared API helpers: time, JSON, company/contact shapes, Raw
+app/taxonomy.py    the title vocabulary (seniority/desk rules) - import this,
+                   never the web layer, to derive a desk or a seniority
 app/email_gen.py   placeholder rendering, quality flags, default templates
-app/server.py      stdlib HTTP server + JSON API (no dependencies)
-app/tools.py       CLI: brief, dupes, backup, hooks
+app/server.py      stdlib HTTP shell + the entry point (the endpoints live in app/api)
+app/api/           one module per surface: companies, contacts, people, outreach,
+                   compose, sourcing, patterns, applications, templates, profile,
+                   analytics, export, demo, maintenance + the ROUTES table in
+                   app/api/__init__.py. To add an endpoint: write the function in
+                   the right module, add one line to its ROUTES, done.
+app/tools.py       CLI: brief, dupes, backup, test, hooks
 app/cv_parse.py    reads a pasted CV and proposes profile fields
 app/discover_careers.py   finds each firm's real careers page (HTTP-verified)
 app/harvest.py     the harvester: fills the database from the providers
@@ -29,15 +42,17 @@ app/email_pattern.py   learns a firm's address format, rebuilds addresses
 app/people_store.py    identity resolution and merge rules
 app/providers/hunter.py    Hunter.io — firm email conventions, bulk domains
 app/providers/prospeo.py   Prospeo — targeted people, career history, phones
-app/test_core.py   test suite, runs on a temp DB
-web/index.html     the UI
+tests/             the suite on a temp DB: tests/harness.py owns the one
+                   temporary database; `python3 app/tools.py test` runs it all
+tests/check_ui.mjs node check that every inline handler and id still resolves
+web/index.html     markup    web/app.js  UI logic    web/style.css  styles
 db/schema.sql      full schema
-data/companies_seed.csv   273 firms, editable
+data/companies_seed.csv   365 firms, editable
 data/companies_seed_extra.csv  92 more firms
 data/company_aliases.csv  137 nickname → official-name mappings
 data/firm_briefs.csv      51 firm intel notes (what they do, how they hire, the hook)
 data/careers_urls.csv     83 verified careers pages (tier 1 complete, tier 2 partial)
-data/cold_approach.db     your data (only real file that matters — back it up)
+data/cold_approach.db     your data (not in git - back it up)
 ```
 
 Tables: `companies` · `contacts` · `person_job_history` · `outreach` · `templates` ·
@@ -390,15 +405,18 @@ because of it. Current defaults score 100 with the sample profile filled in.
 ## Tests
 
 ```bash
-python3 app/test_core.py     # 94 tests, runs against a temp DB, never touches your data
+python3 app/tools.py test     # the suite, on a temp DB, never touches your data
+node tests/check_ui.mjs       # the front-end half of the same promise
 ```
 
-Covers company resolution (exact/alias/substring/accents), title tagging, email pattern
+They cover company resolution (exact/alias/substring/accents), title tagging, email pattern
 guessing and inference, scoring rules, firm-brief hook extraction, empty-variable detection,
 careers-URL validation (including the false positives the first crawler produced and the
 overwrite bug), CV parsing in both English and French, template rendering, and the paste
 reader (tabs, dashes, LinkedIn stitching, credential stripping, the desk-word trap, and the
-pattern a pasted address does and does not teach). Run it after any edit to the logic — the
+pattern a pasted address does and does not teach). Plus the guarantees the layout above
+rests on: the data layer never imports the web layer, and every one of the 45 API routes
+resolves and refuses correctly. Run them after any edit to the logic — the
 whole point is that a future change can't silently relabel your contacts.
 
 ## Command line
