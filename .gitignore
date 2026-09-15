@@ -4,6 +4,9 @@ config.json
 # Raw API responses kept by the harvesters (data/raw/<provider>/...)
 data/raw/
 
+# Timestamped database copies from `tools.py backup`
+data/backups/
+
 # Scratch output from the Prospeo notebook (contains real people's data)
 prospeo_*.json
 

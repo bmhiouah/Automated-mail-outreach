@@ -11,9 +11,18 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "providers"))
 import db  # noqa: E402
+import domain  # noqa: E402
 import email_gen  # noqa: E402
+import email_pattern  # noqa: E402
 import people_parse  # noqa: E402
 import server  # noqa: E402
+import taxonomy  # noqa: E402
+import api  # noqa: E402
+# The endpoint modules, one per surface. Reaching into server for these is what
+# let server.py grow to 1100 lines in the first place.
+from api import analytics, companies, compose  # noqa: E402
+from api import contacts, demo, outreach  # noqa: E402
+from api import people, rows, sourcing, templates  # noqa: E402
 
 _TMP = None
 
@@ -34,7 +43,7 @@ def setUpModule():
     db.ensure_schema()
     # The server seeds templates on first boot; the test DB must do the same or
     # every test that drafts an email gets {"error": "no template available"}.
-    server.api_seed_templates()
+    templates.api_seed_templates()
 
 
 class TestCompanyResolution(unittest.TestCase):
@@ -58,19 +67,19 @@ class TestCompanyResolution(unittest.TestCase):
 
 class TestTitleTagging(unittest.TestCase):
     def test_specific_beats_generic(self):
-        _, desk = server.derive_from_title("Quantitative Analyst - Exotic Equity Derivatives")
+        _, desk = taxonomy.derive_from_title("Quantitative Analyst - Exotic Equity Derivatives")
         self.assertEqual(desk, "Equity Derivatives")
 
     def test_seniority(self):
-        self.assertEqual(server.derive_from_title("Head of Rates Structuring")[0], "head")
-        self.assertEqual(server.derive_from_title("Managing Director")[0], "MD")
-        self.assertEqual(server.derive_from_title("VP, FX Options")[0], "VP")
+        self.assertEqual(taxonomy.derive_from_title("Head of Rates Structuring")[0], "head")
+        self.assertEqual(taxonomy.derive_from_title("Managing Director")[0], "MD")
+        self.assertEqual(taxonomy.derive_from_title("VP, FX Options")[0], "VP")
 
     def test_portfolio_manager(self):
-        self.assertEqual(server.derive_from_title("Systematic Macro Portfolio Manager")[0], "PM")
+        self.assertEqual(taxonomy.derive_from_title("Systematic Macro Portfolio Manager")[0], "PM")
 
     def test_unknown_title(self):
-        self.assertEqual(server.derive_from_title("Chief Vibes Officer"), ("C-suite", ""))
+        self.assertEqual(taxonomy.derive_from_title("Chief Vibes Officer"), ("C-suite", ""))
 
 
 class TestEmailGuessing(unittest.TestCase):
@@ -81,15 +90,15 @@ class TestEmailGuessing(unittest.TestCase):
                                   ("f.last", "a.smith@x.com"),
                                   ("flast", "asmith@x.com"),
                                   ("first", "anna@x.com")):
-            self.assertEqual(server.guess_email(c, {"domain": "x.com", "email_pattern": pattern}),
+            self.assertEqual(email_pattern.guess_email(c, {"domain": "x.com", "email_pattern": pattern}),
                              expected)
 
     def test_no_pattern_no_guess(self):
-        self.assertEqual(server.guess_email({"first_name": "A", "last_name": "B"},
+        self.assertEqual(email_pattern.guess_email({"first_name": "A", "last_name": "B"},
                                             {"domain": "x.com", "email_pattern": ""}), "")
 
     def test_domain_cleanup(self):
-        self.assertEqual(server._clean_domain("https://www.X.com/careers"), "x.com")
+        self.assertEqual(email_pattern._clean_domain("https://www.X.com/careers"), "x.com")
 
 
 class TestPatternInference(unittest.TestCase):
@@ -105,25 +114,25 @@ class TestPatternInference(unittest.TestCase):
         db.execute("DELETE FROM pattern_evidence")
 
     def test_exact_match(self):
-        r = server.infer_pattern(self.co["id"], "anna.smith@janestreet.com")
+        r = email_pattern.infer_pattern(self.co["id"], "anna.smith@janestreet.com")
         self.assertEqual(r["pattern"], "first.last")
         self.assertGreaterEqual(r["confidence"], 0.85)
 
     def test_heuristic_lower_confidence(self):
         # nobody in contacts matches this local part -> shape heuristic only
-        r = server.infer_pattern(self.co["id"], "z.smith@janestreet.com")
+        r = email_pattern.infer_pattern(self.co["id"], "z.smith@janestreet.com")
         self.assertEqual(r["pattern"], "f.last")
         self.assertLess(r["confidence"], 0.8)
         self.assertIn("shape heuristic", r["source"])
 
     def test_initial_matches_known_contact(self):
         # a.smith IS Anna Smith, so this is a confident exact match, not a guess
-        r = server.infer_pattern(self.co["id"], "a.smith@janestreet.com")
+        r = email_pattern.infer_pattern(self.co["id"], "a.smith@janestreet.com")
         self.assertEqual(r["pattern"], "f.last")
         self.assertGreaterEqual(r["confidence"], 0.85)
 
     def test_bad_input(self):
-        self.assertIn("error", server.infer_pattern(self.co["id"], "notanemail"))
+        self.assertIn("error", email_pattern.infer_pattern(self.co["id"], "notanemail"))
 
 
 class TestScoring(unittest.TestCase):
@@ -235,7 +244,7 @@ class TestCareersUrls(unittest.TestCase):
     def test_sourcing_falls_back_to_search_when_no_careers_url(self):
         co = db.resolve_company("BlackRock")
         db.execute("UPDATE companies SET careers_url='' WHERE id=?", [co["id"]])
-        r = server.sourcing_links(co["id"])
+        r = sourcing.sourcing_links(co["id"])
         self.assertFalse(r["careers_is_verified"])
         self.assertIn("google.com/search", r["careers_url"])
         self.assertIn("google.com/search", r["careers_search_url"])
@@ -244,7 +253,7 @@ class TestCareersUrls(unittest.TestCase):
         co = db.resolve_company("Jane Street")
         db.execute("UPDATE companies SET careers_url=? WHERE id=?",
                    ["https://www.janestreet.com/join-jane-street/", co["id"]])
-        r = server.sourcing_links(co["id"])
+        r = sourcing.sourcing_links(co["id"])
         self.assertTrue(r["careers_is_verified"])
         self.assertEqual(r["careers_url"], "https://www.janestreet.com/join-jane-street/")
         # the search link is still offered alongside it
@@ -499,10 +508,10 @@ class TestCvParsing(unittest.TestCase):
         self.assertTrue(any("shouting" in i for i in r["issues"]), r["issues"])
 
     def test_short_text_is_rejected(self):
-        self.assertIn("error", server.api_parse_cv({"cv_text": "hi"}))
+        self.assertIn("error", compose.api_parse_cv({"cv_text": "hi"}))
 
     def test_api_reports_critical_gaps(self):
-        r = server.api_parse_cv({"cv_text": "Jane Doe\njane@x.com\nI did some things.\n" * 3})
+        r = compose.api_parse_cv({"cv_text": "Jane Doe\njane@x.com\nI did some things.\n" * 3})
         self.assertIn("key_skills", r["critical_missing"])
         self.assertIn("confidence", r)
 
@@ -525,43 +534,43 @@ class TestFollowUps(unittest.TestCase):
         db.execute("DELETE FROM contacts WHERE source='test'")
 
     def test_followup_threads_with_re(self):
-        r = server.api_draft_followup({"outreach_id": self.oid})
+        r = outreach.api_draft_followup({"outreach_id": self.oid})
         self.assertEqual(r["subject"], "Re: Quick question about the Quant team")
         self.assertEqual(r["follows"], self.oid)
 
     def test_followup_does_not_double_prefix(self):
         db.execute("UPDATE outreach SET subject='Re: already threaded' WHERE id=?", [self.oid])
-        r = server.api_draft_followup({"outreach_id": self.oid})
+        r = outreach.api_draft_followup({"outreach_id": self.oid})
         self.assertEqual(r["subject"], "Re: already threaded")
 
     def test_followup_uses_the_followup_template(self):
-        r = server.api_draft_followup({"outreach_id": self.oid})
+        r = outreach.api_draft_followup({"outreach_id": self.oid})
         tpl = db.query("SELECT role_family FROM templates WHERE id=?", [r["template_id"]])[0]
         self.assertEqual(tpl["role_family"], "followup")
 
     def test_followup_template_asks_a_question(self):
         """A bump with no question loses 8 points and is easy to ignore."""
-        r = server.api_draft_followup({"outreach_id": self.oid})
+        r = outreach.api_draft_followup({"outreach_id": self.oid})
         self.assertIn("?", r["body"])
         self.assertFalse(any("no question" in i for i in r["quality"]["issues"]),
                          r["quality"]["issues"])
 
     def test_followup_missing_outreach(self):
-        self.assertIn("error", server.api_draft_followup({"outreach_id": 999999}))
+        self.assertIn("error", outreach.api_draft_followup({"outreach_id": 999999}))
 
     def test_followup_without_a_contact(self):
         oid = db.execute("INSERT INTO outreach (subject,body,status) VALUES ('x','y','sent')")
-        self.assertIn("error", server.api_draft_followup({"outreach_id": oid}))
+        self.assertIn("error", outreach.api_draft_followup({"outreach_id": oid}))
 
     def test_sending_a_followup_clears_the_original(self):
         db.execute("UPDATE outreach SET next_followup_at=date('now','-1 day') WHERE id=?",
                    [self.oid])
-        self.assertTrue(server.api_outreach({"due": ["1"]}), "should be due first")
-        f = server.api_draft_followup({"outreach_id": self.oid})
+        self.assertTrue(outreach.api_outreach({"due": ["1"]}), "should be due first")
+        f = outreach.api_draft_followup({"outreach_id": self.oid})
         new_id = db.execute("INSERT INTO outreach (contact_id,subject,body,status) "
                             "VALUES (?,?,?,'draft')", [self.cid, f["subject"], f["body"]])
-        server.api_mark_sent({"id": new_id, "followup_days": 7, "follows": self.oid})
-        self.assertEqual(server.api_outreach({"due": ["1"]}), [],
+        outreach.api_mark_sent({"id": new_id, "followup_days": 7, "follows": self.oid})
+        self.assertEqual(outreach.api_outreach({"due": ["1"]}), [],
                          "the original must stop being due once bumped")
         row = db.query("SELECT followup_stage, next_followup_at FROM outreach WHERE id=?",
                        [self.oid])[0]
@@ -571,7 +580,7 @@ class TestFollowUps(unittest.TestCase):
     def test_marking_sent_without_follows_leaves_others_alone(self):
         db.execute("UPDATE outreach SET next_followup_at=date('now','-1 day') WHERE id=?",
                    [self.oid])
-        server.api_mark_sent({"id": self.oid, "followup_days": 7})
+        outreach.api_mark_sent({"id": self.oid, "followup_days": 7})
         row = db.query("SELECT next_followup_at FROM outreach WHERE id=?", [self.oid])[0]
         self.assertIsNotNone(row["next_followup_at"])
 
@@ -706,7 +715,7 @@ class TestPasteImport(unittest.TestCase):
                    "WHERE name IN ('BNP Paribas','Barclays')")
 
     def test_import_saves_the_person_and_derives_desk(self):
-        r = server.api_import_people({
+        r = people.api_import_people({
             "source": "test",
             "candidates": [{"first_name": "Marc", "last_name": "Dupont",
                             "job_title": "Quantitative Analyst",
@@ -718,7 +727,7 @@ class TestPasteImport(unittest.TestCase):
         self.assertEqual(row["company_name"], "BNP Paribas")
 
     def test_a_pasted_address_is_not_marked_as_a_guess(self):
-        server.api_import_people({
+        people.api_import_people({
             "source": "test",
             "candidates": [{"first_name": "Marc", "last_name": "Dupont",
                             "job_title": "Quantitative Analyst",
@@ -730,7 +739,7 @@ class TestPasteImport(unittest.TestCase):
 
     def test_a_matching_address_teaches_the_firm_pattern(self):
         """The address matches the contact we just created, so we can learn."""
-        r = server.api_import_people({
+        r = people.api_import_people({
             "source": "test",
             "candidates": [{"first_name": "Marc", "last_name": "Dupont",
                             "job_title": "Quantitative Analyst",
@@ -746,7 +755,7 @@ class TestPasteImport(unittest.TestCase):
 
     def test_an_unmatched_address_does_not_teach_a_guess(self):
         """One address tells you the domain, not the convention."""
-        r = server.api_import_people({
+        r = people.api_import_people({
             "source": "test",
             "candidates": [{"first_name": "Tom", "last_name": "Baker",
                             "job_title": "Trader", "company_name": "Citadel"}],
@@ -761,16 +770,16 @@ class TestPasteImport(unittest.TestCase):
                    "candidates": [{"first_name": "Marc", "last_name": "Dupont",
                                    "job_title": "Quantitative Analyst",
                                    "company_name": "BNP Paribas"}]}
-        server.api_import_people(payload)
+        people.api_import_people(payload)
         payload["candidates"][0]["job_title"] = "Senior Quantitative Analyst"
-        r = server.api_import_people(payload)
+        r = people.api_import_people(payload)
         self.assertEqual((r["added"], r["updated"]), (0, 1))
         rows = db.query("SELECT * FROM contacts WHERE source='test'")
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["job_title"], "Senior Quantitative Analyst")
 
     def test_parse_endpoint_refuses_empty_input(self):
-        self.assertIn("error", server.api_parse_people({"text": "  "}))
+        self.assertIn("error", people.api_parse_people({"text": "  "}))
 
 
 # --------------------------------------------------------------- harvesting
@@ -1496,15 +1505,81 @@ class TestLayering(unittest.TestCase):
                         "print(taxonomy.derive_from_title('VP, FX Options'))")
         self.assertEqual(got, "('VP', 'FX')")
 
-    def test_server_reexports_the_vocabulary(self):
-        """The API layer and existing callers still speak these names."""
+    def test_the_vocabulary_lives_only_in_taxonomy(self):
+        """The shell must not grow a second copy of the rules.
+
+        Two versions of "a Vice President is a VP" is exactly how the same person
+        ends up labelled differently depending on which module reached them first.
+        """
         for name in ("COMPANY_FIELDS", "CONTACT_FIELDS", "OUTREACH_FIELDS",
                      "TEMPLATE_FIELDS", "APPLICATION_FIELDS", "PROFILE_FIELDS",
-                     "TITLES_BY_TYPE", "CONTACT_IMPORT_MAP", "derive_from_title"):
-            self.assertTrue(hasattr(server, name), name)
-        import taxonomy
-        self.assertEqual(server.derive_from_title("Managing Director"),
-                         taxonomy.derive_from_title("Managing Director"))
+                     "TITLES_BY_TYPE", "CONTACT_IMPORT_MAP", "SENIORITY_RULES",
+                     "DESK_RULES", "derive_from_title"):
+            self.assertTrue(hasattr(taxonomy, name), name)
+            self.assertFalse(hasattr(server, name),
+                             "%s is defined in server.py as well as taxonomy.py" % name)
+
+    def test_server_declares_no_rules_of_its_own(self):
+        import inspect
+        src = inspect.getsource(server)
+        for name in ("SENIORITY_RULES", "DESK_RULES", "COMPANY_FIELDS", "PATTERNS"):
+            self.assertNotIn(name + " = ", src, "%s is defined inside server.py" % name)
+
+
+class TestApiDispatch(unittest.TestCase):
+    """The route table is the API's contract with the UI.
+
+    These are the tests that made moving 45 if/elif branches possible: they walk
+    the table and prove every route still resolves, rather than trusting that a
+    hand-moved branch landed intact.
+    """
+
+    @staticmethod
+    def _path(pattern):
+        return [p if not p.startswith("<") else "1" for p in pattern.split("/")]
+
+    def test_every_declared_route_resolves(self):
+        for method, pattern, _ in api.ROUTES:
+            with self.subTest(route="%s /api/%s" % (method, pattern)):
+                status, _value = server.dispatch(method, self._path(pattern), {}, {})
+                self.assertNotEqual(status, 404, "no handler matched this route")
+
+    def test_no_route_crashes_on_an_empty_body(self):
+        """An empty payload is a JSON error, never a 500."""
+        broken = []
+        try:
+            for method, pattern, _ in api.ROUTES:
+                status, value = server.dispatch(method, self._path(pattern), {}, {})
+                if status == 500:
+                    broken.append("%s /api/%s -> %s" % (method, pattern, value))
+        finally:
+            server.dispatch("POST", ["demo", "clear"], {}, {})   # undo demo inserts
+        self.assertEqual(broken, [], "routes that fall over on an empty body")
+
+    def test_unknown_paths_are_refused(self):
+        self.assertEqual(server.dispatch("GET", ["nope"], {}, {})[0], 404)
+        self.assertEqual(server.dispatch("GET", ["stats", "extra"], {}, {})[0], 404)
+        self.assertEqual(server.dispatch("POST", ["demo", "load", "extra"], {}, {})[0], 404)
+
+    def test_api_root_answers_ok(self):
+        self.assertEqual(server.dispatch("GET", [], {}, {}), (200, {"ok": True}))
+
+    def test_exports_return_bytes_not_json(self):
+        status, value = server.dispatch("GET", ["export", "contacts"], {}, {})
+        self.assertEqual(status, 200)
+        self.assertIsInstance(value, server.Raw)
+        self.assertIn("text/csv", value.ctype)
+
+        status, value = server.dispatch("GET", ["export", "sourcing"], {}, {})
+        self.assertIsInstance(value, server.Raw)
+        self.assertIn("text/markdown", value.ctype)
+        self.assertIn("sourcing-worklist.md", value.headers["Content-Disposition"])
+
+    def test_generic_writes_only_touch_whitelisted_tables(self):
+        """The table name reaches an SQL string, so it must come from the map."""
+        self.assertEqual(server.dispatch("DELETE", ["sqlite_master", "1"], {}, {})[0], 404)
+        self.assertEqual(server.dispatch("PUT", ["sqlite_master", "1"], {}, {})[0], 404)
+        self.assertEqual(server.dispatch("DELETE", ["vendor_universe", "1"], {}, {})[0], 404)
 
 
 if __name__ == "__main__":
