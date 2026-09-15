@@ -269,7 +269,6 @@ class TestProgressiveHarvest(unittest.TestCase):
         self.assertEqual(len(rows), 2, out)
         anna = [r for r in rows if r["first_name"] == "Anna"][0]
         self.assertEqual(anna["email"], "anna.smith@janestreet.com")
-        self.assertEqual(anna["email_status"], "verified")   # Hunter says 'valid'
         self.assertEqual(anna["linkedin_url"], "anna-smith")
         self.assertEqual(anna["department"], "research")
         co = db.query("SELECT * FROM companies WHERE name='Jane Street'")[0]
@@ -281,7 +280,8 @@ class TestProgressiveHarvest(unittest.TestCase):
         self._run()
         tom = db.query("SELECT * FROM contacts WHERE source='hunter' "
                        "AND first_name='Tom'")[0]
-        self.assertEqual(tom["email_status"], "unknown")
+        # an accept-all 'valid' proves nothing - but a real address still fills in
+        self.assertEqual(tom["email"], "tom.baker@janestreet.com")
 
     def test_a_second_run_spends_nothing_and_makes_no_calls(self):
         self._run()
@@ -312,28 +312,28 @@ class TestProgressiveHarvest(unittest.TestCase):
         """The merge rule: API data fills gaps, it does not overwrite people."""
         co = db.resolve_company("Jane Street")
         db.execute("INSERT INTO contacts (first_name,last_name,company_id,company_name,"
-                   "job_title,desk,email,email_status,city,linkedin_url,source) "
+                   "job_title,desk,email,city,linkedin_url,source) "
                    "VALUES ('Anna','Smith',?,?,'Head of Research','Quant',"
-                   "'anna.smith@janestreet.com','verified','Paris','my-own-url','pasted')",
+                   "'anna.smith@janestreet.com','Paris','my-own-url','pasted')",
                    [co["id"], co["name"]])
         self._run()
         row = db.query("SELECT * FROM contacts WHERE source='pasted' AND first_name='Anna'")[0]
         self.assertEqual(row["job_title"], "Head of Research")
         self.assertEqual(row["city"], "Paris")
         self.assertEqual(row["linkedin_url"], "my-own-url")
-        self.assertEqual(row["email_status"], "verified")
+        self.assertEqual(row["email"], "anna.smith@janestreet.com")
 
-    def test_a_guessed_email_is_replaced_by_a_real_one(self):
+    def test_a_harvest_email_is_never_overwritten(self):
         co = db.resolve_company("Jane Street")
         db.execute("INSERT INTO contacts (first_name,last_name,company_id,company_name,"
-                   "email,email_status,source) VALUES ('Anna','Smith',?,?,"
-                   "'wrong.guess@janestreet.com','guessed','pattern guess')",
+                   "email,email_source,source) VALUES ('Anna','Smith',?,?,"
+                   "'anna.smith@janestreet.com','pasted','pasted')",
                    [co["id"], co["name"]])
         self._run()
         row = db.query("SELECT * FROM contacts WHERE first_name='Anna' "
                        "AND company_name='Jane Street'")[0]
         self.assertEqual(row["email"], "anna.smith@janestreet.com")
-        self.assertEqual(row["email_status"], "verified")
+        self.assertEqual(row["email_source"], "pasted")
 
     def test_the_budget_stops_the_run(self):
         db.execute("UPDATE companies SET domain='x.com' WHERE name='Barclays'")
@@ -348,7 +348,10 @@ class TestProgressiveHarvest(unittest.TestCase):
                         "AND source='hunter'")[0]
         self.assertEqual(anna["city"], "London")
         self.assertEqual(anna["country_code"], "GB")
-        self.assertIsNotNone(anna["enriched_at"])
+        # the enrichment date lives on the raw Hunter row now, not on contacts
+        self.assertIsNotNone(db.query(
+            "SELECT updated_at FROM contacts_hunter WHERE email=?",
+            [anna["email"]])[0]["updated_at"])
         self.assertEqual(anna["timezone"], "Europe/London")
         # The verbatim title must survive untouched - it is the audit trail.
         self.assertEqual(anna["position_raw"], "Quantitative Researcher")
@@ -390,18 +393,24 @@ class TestProgressiveHarvest(unittest.TestCase):
 class TestProspeoProvider(unittest.TestCase):
     """Prospeo returns masked data until you pay to reveal it. Handle that."""
 
-    def test_masked_email_and_phone_are_dropped(self):
+    def test_masked_email_and_phone_are_kept_as_evidence(self):
         from providers import prospeo
         p = prospeo.normalise_person({
             "person": {"full_name": "Stefano Iannalfo", "first_name": "Stefano",
                        "last_name": "Iannalfo", "current_job_title": "VP",
-                       "email": {"status": "VERIFIED", "email": "s********@blackrock.com"},
+                       "email": {"status": "VERIFIED", "email": "s********@blackrock.com",
+                                 "verification_method": "BOUNCEBAN",
+                                 "email_mx_provider": "Proofpoint"},
                        "mobile": {"status": "VERIFIED", "mobile": "+44 7477 ******"},
                        "location": {"city": "London", "country_code": "GB"}},
             "company": {"name": "BlackRock", "domain": "blackrock.com"}})
         self.assertEqual(p["email"], "")
-        self.assertTrue(p["email_masked"])
+        self.assertEqual(p["email_masked"], "s********@blackrock.com")
+        self.assertEqual(p["email_verification_method"], "bounceban")
+        self.assertEqual(p["email_mx_provider"], "Proofpoint")
         self.assertEqual(p["phone"], "")
+        self.assertEqual(p["phone_masked"], "+44 7477 ******")
+        self.assertEqual(p["phone_status"], "verified")
         self.assertEqual(p["city"], "London")
         self.assertEqual(p["country_code"], "GB")
         self.assertEqual(p["position_raw"], "VP")

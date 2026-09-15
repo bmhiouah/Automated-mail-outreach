@@ -6,6 +6,7 @@ from .harness import bootstrap  # noqa: E402
 import db
 import email_gen
 import email_pattern
+import people_store
 import unittest
 
 
@@ -130,6 +131,39 @@ class TestEmailConvention(unittest.TestCase):
         self.assertEqual(
             db.query("SELECT email_pattern FROM companies WHERE name='Amundi'")[0]["email_pattern"],
             "first.last")
+
+    def test_a_second_pattern_is_recorded_not_discarded(self):
+        """A firm can use more than one convention; each goes in the evidence."""
+        import email_pattern
+        firm = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+        email_pattern.learn_from_person("Jane", "Doe", "jane.doe@amundi.com", firm)
+        # a different, well-evidenced convention at the same firm
+        email_pattern.learn_from_person("Marc", "Dupont", "mdupont@amundi.com", firm)
+        pats = {r["pattern"] for r in db.query(
+            "SELECT DISTINCT pattern FROM pattern_evidence WHERE company_id=?",
+            [firm["id"]])}
+        self.assertIn("first.last", pats)
+        self.assertIn("flast", pats)
+        # both halves of the address are recorded
+        row = db.query("SELECT * FROM pattern_evidence WHERE company_id=? AND pattern='flast' "
+                       "ORDER BY id DESC LIMIT 1", [firm["id"]])[0]
+        self.assertEqual(row["pattern_before"], "flast")
+        self.assertEqual(row["pattern_after"], "amundi.com")
+
+    def test_a_masked_address_guides_which_pattern_fits(self):
+        """'j********@amundi.com' fits jane.doe (9 letters), not 'jdoe' (4)."""
+        import email_pattern
+        firm = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+        email_pattern.learn_from_person("Jane", "Doe", "jane.doe@amundi.com", firm)
+        email_pattern.store(firm, "flast", 0.6, "second office")
+        cid = db.execute(
+            "INSERT INTO contacts (first_name,last_name,company_id,company_name,"
+            "email_masked,source) VALUES ('Jane','Doe',?,?,"
+            "'j********@amundi.com','prospeo')", [firm["id"], firm["name"]])
+        res = people_store.reconstruct_missing(firm["id"])
+        self.assertGreaterEqual(res["from_masked"], 1)
+        row = db.query("SELECT * FROM contacts WHERE id=?", [cid])[0]
+        self.assertEqual(row["email"], "jane.doe@amundi.com")
 
     def test_a_domain_is_not_matched_on_a_loose_suffix(self):
         """'brandnewfirm.com' must not resolve to some firm ending in 'firm.com'.

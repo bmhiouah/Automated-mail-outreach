@@ -242,21 +242,83 @@ CONTACT_EXTRA_COLUMNS = [
     "full_name TEXT", "headline TEXT", "department TEXT",
     "seniority_level TEXT", "location_raw TEXT", "state TEXT",
     "country_code TEXT", "timezone TEXT", "phone TEXT",
-    "email_confidence INTEGER", "email_verified_at TEXT", "last_seen_at TEXT",
-    "enriched_at TEXT", "sources TEXT", "source_ids TEXT", "source_updated TEXT",
     # position_raw is the verbatim title - the one field that must never be
     # normalised, because it is what every derived field can be checked against.
     "position_raw TEXT",
+    # email_masked stays: the reconstruction pass reads it to turn masked
+    # Prospeo evidence into guessed candidates.
+    "email_masked TEXT",
 ]
 
-# Columns that turned out to carry nothing. Verified empty across the first
-# real harvest (30 contacts): evidence/avatar/bio/role/middle_name/twitter/
-# github were never populated by any provider, decision_maker is irrelevant to
-# a job search, and lat/long duplicate city/state/country for our purposes.
+# Columns that carry nothing in the UNIFIED table. Since the per-source raw
+# tables (contacts_hunter / contacts_prospeo) now hold every field the APIs
+# return, contacts only keeps what the user works with: identity, company,
+# what they do, where they are, mail, phone, LinkedIn - plus the operational
+# columns. Dates, confidence and the re-enrichment ids all live with the
+# source that produced them, or nowhere. Dropped on boot.
 CONTACT_DEAD_COLUMNS = [
-    "middle_name", "role", "decision_maker", "twitter", "github",
-    "avatar", "bio", "evidence", "latitude", "longitude",
+    "middle_name", "role", "twitter", "evidence", "latitude", "longitude",
+    "email_type", "email_verification_method", "email_mx_provider",
+    "email_sources", "phone_masked", "phone_status", "github", "bio",
+    "avatar", "skills", "decision_maker", "fuzzy", "last_job_change",
+    "email_confidence", "email_verified_at", "last_seen_at", "enriched_at",
+    "source_ids", "source_updated",
+    # workflow columns retired at the user's request - the table is a clean
+    # directory of people, nothing else
+    "tags", "notes", "priority", "hook", "status", "sources", "email_status",
 ]
+
+# The canonical column order of `contacts` - who, then where they work, then
+# what they do, then where they are, then how to reach them. SQLite cannot
+# reorder columns in place, so when a live table drifted from this order it is
+# rebuilt once (every value copied, nothing recomputed).
+CONTACTS_ORDER = [
+    "id", "first_name", "last_name", "full_name",
+    "company_id", "company_name", "source",
+    "job_title", "position_raw", "headline", "department",
+    "seniority_level", "seniority", "desk",
+    "city", "state", "country", "country_code", "location_raw", "timezone",
+    "email", "email_masked", "email_source",
+    "phone", "linkedin_url",
+    "created_at", "updated_at",
+]
+
+
+def _rebuild_contacts_if_drifted():
+    """Rebuild `contacts` when its column order no longer matches the schema.
+
+    Column order is cosmetic to SQLite but not to a human reading the table:
+    position_raw belongs next to job_title, email_masked next to email. The
+    copy preserves every value; only the storage order changes. Returns True
+    when a rebuild happened.
+    """
+    have = _columns_of("contacts")
+    expected = [c for c in CONTACTS_ORDER if c in have]
+    if have != expected or len(have) != len(CONTACTS_ORDER):
+        conn = connect()
+        try:
+            conn.execute("PRAGMA foreign_keys = OFF")
+            # Build the new shape under a temp name, copy, then swap. The old
+            # table is dropped (never renamed): renaming the referenced table
+            # rewrites other tables' foreign keys and leaves them pointing at
+            # a ghost, whereas a drop keeps their "REFERENCES contacts" intact.
+            with open(SCHEMA_PATH, encoding="utf-8") as fh:
+                schema = fh.read()
+            block = schema[schema.index("CREATE TABLE IF NOT EXISTS contacts ("):]
+            block = block[:block.index(");") + 2].replace(
+                "CREATE TABLE IF NOT EXISTS contacts (", "CREATE TABLE contacts_new (")
+            conn.executescript(block)
+            common = ", ".join(c for c in CONTACTS_ORDER if c in have)
+            conn.execute(f"INSERT OR REPLACE INTO contacts_new ({common}) "
+                         f"SELECT {common} FROM contacts")
+            conn.execute("DROP TABLE contacts")
+            conn.execute("ALTER TABLE contacts_new RENAME TO contacts")
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_contacts_company ON contacts(company_id)")
+            conn.commit()
+        finally:
+            conn.close()
+        return True
+    return False
 
 
 def ensure_schema(verbose=False):
@@ -271,6 +333,9 @@ def ensure_schema(verbose=False):
     added = []
     added += ensure_columns("companies", COMPANY_EXTRA_COLUMNS)
     added += ensure_columns("contacts", CONTACT_EXTRA_COLUMNS)
+    added += ensure_columns("person_job_history", ["departments TEXT"])
+    added += ensure_columns("pattern_evidence",
+                            ["pattern_before TEXT", "pattern_after TEXT"])
 
     # The first harvest stored Hunter's verbatim title in `headline`. It belongs
     # in position_raw now that we have a column for it, and moving it means the
@@ -286,11 +351,14 @@ def ensure_schema(verbose=False):
                 dropped.append(col)
             except sqlite3.OperationalError:
                 pass          # indexed or referenced: leave it, it is harmless
+    rebuilt = _rebuild_contacts_if_drifted()
     if verbose:
         if added:
             print(f"schema: {len(added)} columns added ({', '.join(added)})")
         if dropped:
             print(f"schema: {len(dropped)} empty columns dropped ({', '.join(dropped)})")
+        if rebuilt:
+            print("schema: contacts rebuilt in canonical column order")
         if moved:
             print(f"schema: position_raw backfilled for {moved} existing contacts")
     return added

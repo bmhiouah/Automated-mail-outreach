@@ -57,6 +57,10 @@ CREATE TABLE IF NOT EXISTS pattern_evidence (
   id           INTEGER PRIMARY KEY AUTOINCREMENT,
   company_id   INTEGER REFERENCES companies(id) ON DELETE CASCADE,
   pattern      TEXT,
+  pattern_before TEXT,                   -- the local-part convention: first.last, f.last, ...
+  pattern_after  TEXT,                   -- the domain after the @: amundi.com.
+                                          -- A masked Prospeo address ("s****@amundi.com")
+                                          -- proves this half even before anyone is revealed.
   sample_email TEXT,
   source       TEXT,
   confidence   REAL DEFAULT 0.5,
@@ -72,19 +76,18 @@ CREATE TABLE IF NOT EXISTS company_aliases (
 );
 
 -- ---------------------------------------------------------------- CONTACTS
+-- The unified table: the vertical concat of contacts_hunter and
+-- contacts_prospeo. Column groups, in the order a person is read:
+-- who · where they work · what they do · where they are · how to reach them.
 CREATE TABLE IF NOT EXISTS contacts (
   id            INTEGER PRIMARY KEY AUTOINCREMENT,
   first_name    TEXT NOT NULL,
   last_name     TEXT NOT NULL,
   full_name     TEXT,
+  -- ------------------------------------------------- where they work
   company_id    INTEGER REFERENCES companies(id) ON DELETE SET NULL,
   company_name  TEXT,                     -- kept denormalised so imports never fail
-  hook          TEXT,                     -- one-line personalisation angle, injected in emails
-  source        TEXT,                     -- linkedin|alumni|conference|referral|website|other
-  priority      INTEGER DEFAULT 3,        -- 1 = contact first
-  status        TEXT DEFAULT 'identified', -- identified|ready|contacted|replied|positive|negative|closed|blacklist
-  tags          TEXT,
-  notes         TEXT,
+  source        TEXT,                     -- hunter|prospeo for harvested rows
   -- ------------------------------------------------- what they do
   job_title         TEXT,                 -- cleaned current title
   position_raw      TEXT,                 -- VERBATIM, exactly as the source wrote it.
@@ -105,19 +108,15 @@ CREATE TABLE IF NOT EXISTS contacts (
   location_raw      TEXT,                 -- "New York City Metropolitan Area"
   timezone          TEXT,
   -- ------------------------------------------------- how to reach them
-  email             TEXT,
-  email_status      TEXT DEFAULT 'unknown', -- unknown|guessed|verified|bounced|missing
+  email             TEXT,                 -- a real address, or a reconstruction
+  email_masked      TEXT,                 -- Prospeo's masked address ("s****@blackrock.com"),
+                                          -- next to the mail it may one day become.
+                                          -- NOT an address: never sent, never fed to the
+                                          -- pattern engine. The reconstruction pass
+                                          -- replaces it once the firm's convention is known.
   email_source      TEXT,
-  email_confidence  INTEGER,              -- 0-100 as reported by the provider
-  email_verified_at TEXT,
   phone             TEXT,
   linkedin_url      TEXT,
-  -- ------------------------------------------------- provenance
-  sources           TEXT,                 -- "hunter,prospeo" — who contributed
-  source_ids        TEXT,                 -- JSON {"prospeo": "id"} so we can re-enrich
-  last_seen_at      TEXT,                 -- provider's last-activity signal
-  enriched_at       TEXT,                 -- when we last enriched this person
-  source_updated    TEXT,
   created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at        TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (first_name, last_name, company_name)
@@ -140,8 +139,84 @@ CREATE TABLE IF NOT EXISTS person_job_history (
   end_month       INTEGER,
   duration_months INTEGER,
   is_current      INTEGER DEFAULT 0,
+  departments     TEXT,                   -- comma separated (Prospeo per-job taxonomy)
   source          TEXT,
   created_at      TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ------------------------------------------------- RAW PER-SOURCE CONTACTS
+-- The full provider payload, one table per source, exactly as the API gave it.
+-- `contacts` is the curated vertical concat of the two: the unified fields we
+-- work with, plus a `source` column saying Hunter or Prospeo. Anything the
+-- unified table does not keep still lives here, so nothing a provider offers
+-- is ever lost - including masked phone variants we may want later.
+--
+-- A row here is written on every harvest, before the merge into `contacts`,
+-- and is keyed on the provider's own identifier so a re-run updates in place.
+
+CREATE TABLE IF NOT EXISTS contacts_hunter (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  domain          TEXT,                   -- the domain we searched
+  email           TEXT,
+  email_type      TEXT,                   -- personal|generic
+  confidence      INTEGER,                -- Hunter's 0-100
+  first_name      TEXT,
+  last_name       TEXT,
+  position        TEXT,                   -- cleaned title
+  position_raw    TEXT,                   -- verbatim
+  seniority       TEXT,
+  department      TEXT,
+  decision_maker  INTEGER,
+  linkedin        TEXT,
+  twitter         TEXT,
+  phone_number    TEXT,
+  verification_status TEXT,
+  verification_date   TEXT,
+  sources         TEXT,                   -- JSON: where the address was seen
+  company_name    TEXT,
+  fetched_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (domain, email)
+);
+
+CREATE TABLE IF NOT EXISTS contacts_prospeo (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  person_id       TEXT UNIQUE,            -- Prospeo's stable id; the merge key
+  first_name      TEXT,
+  last_name       TEXT,
+  full_name       TEXT,
+  linkedin_url    TEXT,
+  linkedin_member_id TEXT,
+  current_job_title   TEXT,
+  current_job_key     TEXT,
+  headline        TEXT,
+  last_job_change_detected_at TEXT,
+  -- email block, exactly as Prospeo returned it (masked forms included)
+  email           TEXT,                   -- masked or real, verbatim
+  email_revealed  INTEGER,                -- 0 until enrich-person paid for it
+  email_status    TEXT,                   -- VERIFIED / ...
+  email_verification_method TEXT,
+  email_mx_provider TEXT,
+  -- phone block: all three variants the API can give
+  mobile              TEXT,               -- international, possibly masked
+  mobile_national     TEXT,               -- possibly masked
+  mobile_international TEXT,
+  mobile_status   TEXT,
+  mobile_revealed INTEGER,
+  mobile_country  TEXT,
+  mobile_country_code TEXT,
+  -- location
+  city            TEXT,
+  state           TEXT,
+  country         TEXT,
+  country_code    TEXT,
+  time_zone       TEXT,
+  -- the rest, kept as JSON so nothing is dropped
+  skills          TEXT,                   -- JSON list
+  job_history     TEXT,                   -- JSON: up to 5 past roles, verbatim
+  company         TEXT,                   -- JSON: the firm profile, verbatim
+  fetched_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
 -- ---------------------------------------------------------------- TEMPLATES
@@ -253,7 +328,6 @@ CREATE TABLE IF NOT EXISTS raw_payload (
 
 CREATE INDEX IF NOT EXISTS idx_fetch_log_key       ON fetch_log(provider, endpoint, request_key);
 CREATE INDEX IF NOT EXISTS idx_contacts_company    ON contacts(company_id);
-CREATE INDEX IF NOT EXISTS idx_contacts_status     ON contacts(status);
 CREATE INDEX IF NOT EXISTS idx_outreach_contact    ON outreach(contact_id);
 CREATE INDEX IF NOT EXISTS idx_outreach_status     ON outreach(status);
 CREATE INDEX IF NOT EXISTS idx_companies_type      ON companies(type);

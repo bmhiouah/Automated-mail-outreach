@@ -18,8 +18,7 @@ def api_analytics():
         return round(100 * num / den, 1) if den else 0.0
 
     contacts = db.query("SELECT COUNT(*) n FROM contacts")[0]["n"]
-    contacted = db.query("SELECT COUNT(*) n FROM contacts WHERE status NOT IN "
-                         "('identified','ready','blacklist')")[0]["n"]
+    # outreach carries the workflow state now that contacts is a clean directory
     sent = db.query("SELECT COUNT(*) n FROM outreach WHERE status NOT IN "
                     "('draft','approved')")[0]["n"]
     replied = db.query("SELECT COUNT(*) n FROM outreach WHERE status IN "
@@ -28,7 +27,6 @@ def api_analytics():
 
     funnel = [
         ("contacts found", contacts, 100.0),
-        ("contacted", contacted, rate(contacted, contacts)),
         ("emails sent", sent, rate(sent, contacts)),
         ("replies", replied, rate(replied, sent)),
         ("positive", positive, rate(positive, sent)),
@@ -36,13 +34,11 @@ def api_analytics():
 
     by_type = db.query(
         "SELECT COALESCE(co.type,'unknown') k, COUNT(*) contacts, "
-        "SUM(CASE WHEN c.status NOT IN ('identified','ready','blacklist') THEN 1 ELSE 0 END) contacted, "
-        "SUM(CASE WHEN c.status IN ('replied','positive') THEN 1 ELSE 0 END) replied "
+        "SUM(CASE WHEN c.email IS NOT NULL AND c.email != '' THEN 1 ELSE 0 END) emailed "
         "FROM contacts c LEFT JOIN companies co ON co.id=c.company_id GROUP BY k ORDER BY contacts DESC")
     by_tier = db.query(
         "SELECT COALESCE(co.tier,0) k, COUNT(*) contacts, "
-        "SUM(CASE WHEN c.status NOT IN ('identified','ready','blacklist') THEN 1 ELSE 0 END) contacted, "
-        "SUM(CASE WHEN c.status IN ('replied','positive') THEN 1 ELSE 0 END) replied "
+        "SUM(CASE WHEN c.email IS NOT NULL AND c.email != '' THEN 1 ELSE 0 END) emailed "
         "FROM contacts c LEFT JOIN companies co ON co.id=c.company_id GROUP BY k ORDER BY k")
     by_template = db.query(
         "SELECT COALESCE(t.name,'no template') k, COUNT(*) sent, "
@@ -51,8 +47,8 @@ def api_analytics():
         "WHERE o.status NOT IN ('draft','approved') GROUP BY k ORDER BY sent DESC")
     return {
         "funnel": [{"stage": s, "n": n, "pct": p} for s, n, p in funnel],
-        "by_type": [dict(r, reply_rate=rate(r["replied"], r["contacted"])) for r in by_type],
-        "by_tier": [dict(r, reply_rate=rate(r["replied"], r["contacted"])) for r in by_tier],
+        "by_type": [dict(r, reply_rate=rate(r["emailed"], r["contacts"])) for r in by_type],
+        "by_tier": [dict(r, reply_rate=rate(r["emailed"], r["contacts"])) for r in by_tier],
         "by_template": [dict(r, reply_rate=rate(r["replied"], r["sent"])) for r in by_template],
     }
 
@@ -64,7 +60,7 @@ def api_stats():
     stats["companies_by_type"] = db.query(
         "SELECT type, COUNT(*) n FROM companies GROUP BY type ORDER BY n DESC")
     stats["contacts_by_status"] = db.query(
-        "SELECT status, COUNT(*) n FROM contacts GROUP BY status ORDER BY n DESC")
+        "SELECT status, COUNT(*) n FROM outreach GROUP BY status ORDER BY n DESC")
     stats["outreach_by_status"] = db.query(
         "SELECT status, COUNT(*) n FROM outreach GROUP BY status ORDER BY n DESC")
     stats["with_email"] = db.query(

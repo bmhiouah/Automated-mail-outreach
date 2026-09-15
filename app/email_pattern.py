@@ -32,12 +32,14 @@ import db  # noqa: E402
 PATTERNS = {
     "first.last": lambda f, l: f"{f}.{l}",
     "first_last": lambda f, l: f"{f}_{l}",
+    "first-last": lambda f, l: f"{f}-{l}",
     "f.last": lambda f, l: f"{f[0]}.{l}" if f else "",
     "flast": lambda f, l: f"{f[0]}{l}" if f else "",
     "firstlast": lambda f, l: f"{f}{l}",
     "firstl": lambda f, l: f"{f}{l[0]}" if l else "",
     "last.first": lambda f, l: f"{l}.{f}",
     "lastfirst": lambda f, l: f"{l}{f}",
+    "lastf": lambda f, l: f"{l}{f[0]}" if f else "",
     "first": lambda f, l: f,
 }
 
@@ -124,35 +126,45 @@ def _shape_heuristic(local):
 
 
 def store(company, pattern, confidence, source, sample=""):
-    """Write a firm's convention. Never downgrades stronger existing evidence.
+    """Record a firm's convention. Every distinct pattern is kept; one is primary.
 
-    A pattern proven against a real person's name (0.95) beats Hunter's
-    reported pattern (0.9), which beats a shape guess. We keep the sample so a
-    human can check the claim later, and we log it in `pattern_evidence`
-    alongside the hand-pasted evidence the app already collects.
+    A firm can use more than one convention (acquisitions, regional offices),
+    so EVERY pattern learned goes into `pattern_evidence` - with the two halves
+    of the address: pattern_before (the local part: first.last) and
+    pattern_after (the domain after the @: amundi.com; a masked Prospeo
+    address proves this half before anyone is revealed).
+
+    `companies.email_pattern` stays the PRIMARY convention: it is only
+    upgraded, never downgraded - a pattern proven against a real person's
+    name (0.95) beats Hunter's reported pattern (0.9), which beats a shape
+    guess. Re-read the row rather than trusting the caller's copy: a stale
+    dict would let a weak guess overwrite a proven one.
     """
     if not pattern or not company:
         return False
-    # Re-read the row rather than trusting the caller's copy: a stale dict
-    # would report no pattern and let a weak guess overwrite a proven one.
     rows = db.query("SELECT * FROM companies WHERE id=?", [company["id"]])
     firm = rows[0] if rows else company
     current = (firm.get("email_pattern") or "").strip()
     current_conf = firm.get("pattern_confidence") or 0
-    if current and current_conf >= confidence and current != pattern:
-        return False
-    if current == pattern and current_conf >= confidence:
-        return False
+
+    # the domain after the @: from the sample when we have one, else the firm's
+    after = clean_domain(sample.rsplit("@", 1)[1]) if "@" in (sample or "") \
+        else clean_domain(firm.get("domain"))
     db.execute(
-        "UPDATE companies SET email_pattern=?, pattern_confidence=?, "
-        "pattern_source=?, pattern_sample=COALESCE(NULLIF(?,''), pattern_sample), "
-        "updated_at=CURRENT_TIMESTAMP WHERE id=?",
-        [pattern, confidence, source, sample, company["id"]])
-    db.execute("INSERT INTO pattern_evidence (company_id, pattern, sample_email, source, "
-               "confidence, notes) VALUES (?,?,?,?,?,?)",
-               [company["id"], pattern, sample, source, confidence,
-                f"learned from {source}"])
-    return True
+        "INSERT INTO pattern_evidence (company_id, pattern, pattern_before, "
+        "pattern_after, sample_email, source, confidence, notes) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        [company["id"], pattern, pattern, after, sample, source, confidence,
+         f"learned from {source}"])
+
+    upgraded = not current or confidence > (current_conf or 0)
+    if upgraded:
+        db.execute(
+            "UPDATE companies SET email_pattern=?, pattern_confidence=?, "
+            "pattern_source=?, pattern_sample=COALESCE(NULLIF(?,''), pattern_sample), "
+            "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            [pattern, confidence, source, sample, company["id"]])
+    return upgraded
 
 
 def learn_from_person(first, last, email, company):
@@ -290,11 +302,56 @@ def learn_patterns_from_samples(samples):
     return {"learned": learned, "skipped": skipped}
 
 
+def patterns_for_company(company_id):
+    """Every convention on record for a firm, best first.
+
+    A firm can legitimately use several (acquisitions, regional offices), so
+    the primary (companies.email_pattern) comes first, then every distinct
+    pattern in pattern_evidence by confidence. Reconstruction tries them all.
+    """
+    out, seen = [], set()
+    rows = db.query("SELECT email_pattern, pattern_confidence FROM companies WHERE id=?",
+                    [company_id])
+    if rows and rows[0]["email_pattern"]:
+        p = rows[0]["email_pattern"].strip()
+        out.append((p, rows[0]["pattern_confidence"] or 0.9))
+        seen.add(p.lower())
+    for r in db.query("SELECT DISTINCT pattern, MAX(confidence) confidence "
+                      "FROM pattern_evidence WHERE company_id=? "
+                      "AND pattern IS NOT NULL AND pattern!='' "
+                      "GROUP BY pattern ORDER BY confidence DESC", [company_id]):
+        p = (r["pattern"] or "").strip()
+        if p and p.lower() not in seen:
+            out.append((p, r["confidence"] or 0.5))
+            seen.add(p.lower())
+    return out
+
+
+def _mask_admits(local, mask_local):
+    """Could this candidate local part be the one behind a Prospeo mask?
+
+    's********' shows one real letter then stars: the candidate must start
+    with that letter and have the same length. When the mask length looks
+    truncated we do not reject on length - a masked address is a hint, and an
+    over-strict check would leave people addressless.
+    """
+    if not mask_local:
+        return True
+    vis = mask_local.replace("*", "")
+    if vis and not local.lower().startswith(vis.lower()):
+        return False
+    stars = mask_local.count("*")
+    if stars and stars <= 6 and len(local) != len(mask_local):
+        return False        # short masks are usually faithful to the length
+    return True
+
+
 def apply_guesses(company_id=None):
     """Fill empty addresses from known conventions, flagged as guessed.
 
     A reconstructed address is a lead, never a fact: it is written with
     email_status='guessed' so the paste/verified paths are never overwritten.
+    Every convention on record for the firm is tried, best first.
     """
     q = ("SELECT c.*, co.domain, co.email_pattern FROM contacts c "
          "JOIN companies co ON co.id = c.company_id "
@@ -307,10 +364,65 @@ def apply_guesses(company_id=None):
     rows = db.query(q, args)
     n = 0
     for r in rows:
-        email = guess_email(r, {"domain": r["domain"], "email_pattern": r["email_pattern"]})
+        for pattern, _conf in patterns_for_company(r["company_id"]):
+            email = guess_email(r, {"domain": r["domain"], "email_pattern": pattern})
+            if email:
+                break
         if email:
-            db.execute("UPDATE contacts SET email=?, email_status='guessed', "
-                       "email_source='pattern', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+            db.execute("UPDATE contacts SET email=?, email_source='pattern', "
+                       "updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                       [email, r["id"]])
+            n += 1
+    return {"updated": n}
+
+
+def apply_masked(company_id=None):
+    """Turn masked Prospeo addresses into candidates once the convention is known.
+
+    A masked address ("s********@blackrock.com") is not an address, but it is a
+    person we hold. When the firm's email convention is known and we have the
+    name, the reconstruction gives that person a real (guessed) candidate and
+    retires the masked evidence. It must run *after* the real-address learning
+    pass: every verified address at the firm makes more of these resolvable.
+    """
+    q = ("SELECT c.*, co.domain, co.email_pattern FROM contacts c "
+         "JOIN companies co ON co.id = c.company_id "
+         "WHERE c.email_masked IS NOT NULL AND c.email_masked != '' "
+         "AND co.email_pattern IS NOT NULL "
+         "AND co.email_pattern != '' AND co.domain IS NOT NULL AND co.domain != ''")
+    args = []
+    if company_id:
+        q += " AND c.company_id=?"
+        args.append(company_id)
+    rows = db.query(q, args)
+    n = 0
+    for r in rows:
+        # apply_guesses may already have filled this address; either way the
+        # masked evidence is now redundant - retire it, write the address only
+        # if the row still has none.
+        if r["email"]:
+            db.execute("UPDATE contacts SET email_masked='', "
+                       "updated_at=CURRENT_TIMESTAMP WHERE id=?", [r["id"]])
+            n += 1
+            continue
+        # Try every convention the firm has on record. A pattern the masked
+        # address is consistent with (same first letter, same length) wins
+        # over the primary pattern - the mask is a check, not just decoration.
+        mask_local = r["email_masked"].rsplit("@", 1)[0]
+        fallback = None
+        email = None
+        for pattern, _conf in patterns_for_company(r["company_id"]):
+            cand = guess_email(r, {"domain": r["domain"], "email_pattern": pattern})
+            if not cand:
+                continue
+            if _mask_admits(cand.rsplit("@", 1)[0], mask_local):
+                email = cand
+                break
+            fallback = fallback or cand
+        email = email or fallback
+        if email:
+            db.execute("UPDATE contacts SET email=?, email_source='pattern', "
+                       "email_masked='', updated_at=CURRENT_TIMESTAMP WHERE id=?",
                        [email, r["id"]])
             n += 1
     return {"updated": n}

@@ -33,7 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import db            # noqa: E402
 import people_store  # noqa: E402
-from providers import hunter, prospeo  # noqa: E402
+from providers import emailformat, hunter, prospeo  # noqa: E402
 
 DEFAULT_REFRESH_DAYS = 30
 
@@ -186,6 +186,11 @@ def run_prospeo(args):
     total_hist = db.query("SELECT COUNT(*) n FROM person_job_history")[0]["n"]
     print(f"  {new_firms} new firms discovered, {history} people with career history "
           f"({total_hist} rows in total), {revealed} addresses revealed.")
+    # End of run: every convention learned this run is applied immediately, so
+    # masked Prospeo addresses turn into candidates while it is fresh.
+    rec = people_store.reconstruct_missing()
+    print(f"  Reconstruction: {rec['updated']} addresses filled from firm conventions "
+          f"({rec['from_masked']} from masked Prospeo data), marked 'guessed'.")
     print(f"  Credits spent: {spent:g}\n")
     return 0
 
@@ -273,8 +278,7 @@ def run_hunter(args):
                         spent += hunter.CREDIT_COST["people-find"]
                     p.update({k: en.get(k) for k in
                               ("city", "state", "country", "country_code",
-                               "location_raw", "timezone", "github", "phone",
-                               "last_seen_at") if en.get(k)})
+                               "location_raw", "timezone", "github", "phone") if en.get(k)})
                     enriched += 1
                     did_enrich = True
             outcome, cid = people_store.upsert(p, company, provider="hunter")
@@ -282,8 +286,8 @@ def run_hunter(args):
             updated += outcome == "updated"
             unchanged += outcome == "unchanged"
             if did_enrich and cid:
-                db.execute("UPDATE contacts SET enriched_at=?, updated_at=? WHERE id=?",
-                           [now(), now(), cid])
+                db.execute("UPDATE contacts SET updated_at=? WHERE id=?",
+                           [now(), cid])
 
         print(f"  [{i}/{len(todo)}] {company['name']}: {len(res.get('people') or [])} people "
               f"[spent {spent:g}/{args.budget}]")
@@ -291,6 +295,9 @@ def run_hunter(args):
     print(f"\n  Done. {added} added, {updated} updated, {unchanged} unchanged, "
           f"{enriched} enriched.")
     print(f"  Firm conventions learned: {patterns}")
+    rec = people_store.reconstruct_missing()
+    print(f"  Reconstruction: {rec['updated']} addresses filled from firm conventions "
+          f"({rec['from_masked']} from masked Prospeo data), marked 'guessed'.")
     print(f"  Credits spent: {spent:g}\n")
     return 0
 
@@ -333,6 +340,36 @@ def cmd_set_key(args):
     return cmd_check_key(args)
 
 
+def cmd_emailformat(args):
+    """Learn firm conventions from the public directory: free, one page per domain."""
+    db.ensure_schema()
+    firms = pick_firms(tier=args.tier, company=args.company, limit=args.limit,
+                       only_missing=False)
+    todo = [f for f in firms if (f.get("domain") or "").strip()]
+    print(f"\n  Email-format harvest — free (0 credits), {len(todo)} firms with a domain\n")
+    learned = patterns = skipped = 0
+    for i, firm in enumerate(todo, 1):
+        domain = firm["domain"].strip().lower()
+        parsed = emailformat.domain_conventions(domain, force=args.force_refresh)
+        if not parsed.get("ok"):
+            print(f"  [{i}/{len(todo)}] {firm['name']}: {parsed.get('error')}")
+            continue
+        res = emailformat.apply_to_company(firm, parsed)
+        pl = len(res.get("learned") or [])
+        sk = len(res.get("skipped") or [])
+        patterns += pl
+        skipped += sk
+        if res.get("pattern"):
+            learned += 1
+        marks = ",".join(f"{e['pattern']}@{e['share']:.0f}%" for e in (res.get("learned") or []))
+        extra = f" | evidence-only: {sk}" if sk else ""
+        print(f"  [{i}/{len(todo)}] {firm['name']}: {marks or 'nothing mapped'}"
+              f"{' [cached]' if parsed.get('cached') else ''}{extra}")
+    print(f"\n  Done. {learned} firms with a convention, {patterns} patterns recorded, "
+          f"{skipped} descriptors outside our vocabulary.\n")
+    return 0
+
+
 def cmd_status(args):
     db.ensure_schema()
     n = db.query("SELECT COUNT(*) n FROM contacts")[0]["n"]
@@ -340,9 +377,10 @@ def cmd_status(args):
                       "GROUP BY k ORDER BY n DESC")
     located = db.query("SELECT COUNT(*) n FROM contacts WHERE city IS NOT NULL AND city!=''")[0]["n"]
     mailed = db.query("SELECT COUNT(*) n FROM contacts WHERE email IS NOT NULL AND email!=''")[0]["n"]
-    verified = db.query("SELECT COUNT(*) n FROM contacts WHERE email_status='verified'")[0]["n"]
     hist = db.query("SELECT COUNT(*) n FROM person_job_history")[0]["n"]
     firms = db.query("SELECT COUNT(*) n FROM companies")[0]["n"]
+    masked = db.query("SELECT COUNT(*) n FROM contacts WHERE email_masked IS NOT NULL "
+                      "AND email_masked!=''")[0]["n"]
     patterned = db.query("SELECT COUNT(*) n FROM companies WHERE email_pattern IS NOT NULL "
                          "AND email_pattern!=''")[0]["n"]
     calls = db.query("SELECT COUNT(*) n FROM fetch_log")[0]["n"]
@@ -352,7 +390,8 @@ def cmd_status(args):
     print(f"    people:             {n}")
     for r in by_src:
         print(f"      {r['k']:>10}: {r['n']}")
-    print(f"    with an address:    {mailed} ({verified} verified)")
+    print(f"    with an address:    {mailed} (real, unmasked)")
+    print(f"    masked-only:        {masked} (candidates once the firm pattern is known)")
     print(f"    with a location:    {located}")
     print(f"    career rows:        {hist}")
     print(f"\n  Providers")
@@ -373,7 +412,7 @@ def cmd_reconstruct(args):
 
 def main():
     p = argparse.ArgumentParser(description="Progressive harvester.")
-    p.add_argument("--source", default="prospeo", choices=["prospeo", "hunter"])
+    p.add_argument("--source", default="prospeo", choices=["prospeo", "hunter", "emailformat"])
     p.add_argument("--tier", default=None, help="hunter: which tiers, e.g. 1 or 1,2")
     p.add_argument("--company", default=None, help="hunter: one exact firm name")
     p.add_argument("--limit", type=int, default=None, help="hunter: max firms")
@@ -403,6 +442,8 @@ def main():
         return cmd_status(args)
     if args.reconstruct:
         return cmd_reconstruct(args)
+    if args.source == "emailformat":
+        return cmd_emailformat(args)
     if args.source == "prospeo":
         return run_prospeo(args)
     return run_hunter(args)

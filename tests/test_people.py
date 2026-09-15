@@ -154,7 +154,7 @@ class TestPasteImport(unittest.TestCase):
         self.assertEqual(row["seniority"], "analyst")
         self.assertEqual(row["company_name"], "BNP Paribas")
 
-    def test_a_pasted_address_is_not_marked_as_a_guess(self):
+    def test_a_pasted_address_is_kept_as_is(self):
         people.api_import_people({
             "source": "test",
             "candidates": [{"first_name": "Marc", "last_name": "Dupont",
@@ -162,7 +162,7 @@ class TestPasteImport(unittest.TestCase):
                             "company_name": "BNP Paribas",
                             "email": "marc.dupont@bnpparibas.com"}]})
         row = db.query("SELECT * FROM contacts WHERE source='test'")[0]
-        self.assertEqual(row["email_status"], "verified")
+        self.assertEqual(row["email"], "marc.dupont@bnpparibas.com")
         self.assertEqual(row["email_source"], "pasted")
 
     def test_a_matching_address_teaches_the_firm_pattern(self):
@@ -237,8 +237,13 @@ class TestPeopleStore(unittest.TestCase):
         rows = db.query("SELECT * FROM contacts WHERE company_name='Amundi'")
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["city"], "London")
-        self.assertIn("hunter", rows[0]["sources"])
-        self.assertIn("prospeo", rows[0]["sources"])
+        # Both providers' full payloads stay queryable in their own tables.
+        # (The Hunter person here has no email, so there is nothing to key the
+        # hunter row on; the Prospeo person has no person_id, so there is
+        # nothing to key the prospeo row on. Rows with provider ids land in
+        # the test_each_source_keeps_its_full_payload and
+        # test_a_hunter_row_lands_in_contacts_hunter tests instead.)
+        self.assertEqual(rows[0]["city"], "London")
 
     def test_harvested_data_never_overwrites_a_curated_field(self):
         import people_store
@@ -253,26 +258,103 @@ class TestPeopleStore(unittest.TestCase):
         self.assertEqual(row["job_title"], "Head of Research")
         self.assertEqual(row["city"], "Paris")
 
-    def test_a_guessed_address_is_upgraded_but_a_verified_one_is_not(self):
+    def test_a_real_address_is_never_overwritten(self):
         import people_store
         db.execute("INSERT INTO contacts (first_name,last_name,company_id,company_name,"
-                   "email,email_status,source) VALUES ('Jane','Doe',?,?,"
-                   "'jdoe@amundi.com','guessed','pattern')", [self.co["id"], self.co["name"]])
+                   "email,source) VALUES ('Jane','Doe',?,?,"
+                   "'jdoe@amundi.com','pattern')", [self.co["id"], self.co["name"]])
         people_store.upsert({"first_name": "Jane", "last_name": "Doe",
                              "email": "jane.doe@amundi.com",
                              "email_verification": "valid"}, self.co, "hunter")
         row = db.query("SELECT * FROM contacts WHERE company_name='Amundi'")[0]
-        self.assertEqual(row["email"], "jane.doe@amundi.com")
-        self.assertEqual(row["email_status"], "verified")
+        self.assertEqual(row["email"], "jdoe@amundi.com")
 
-    def test_a_masked_address_is_not_stored(self):
-        """'s****@firm.com' is not an address. Storing it would poison the column."""
+    def test_each_source_keeps_its_full_payload(self):
+        """The per-source tables hold everything the API returned - phone
+        variants, masked forms, the lot - even when `contacts` keeps less."""
+        people_store.upsert(
+            {"first_name": "Stefano", "last_name": "Iannalfo",
+             "email_masked": "s********@amundi.com",
+             "email_raw": "s********@amundi.com", "email_revealed": 0,
+             "email_verification": "verified",
+             "email_verification_method": "bounceban",
+             "email_mx_provider": "Proofpoint",
+             "phone_masked": "+44 7477 ******",
+             "phone_status": "verified",
+             "mobile_national": "07477 ******",
+             "mobile_international": "+44 7477 ******",
+             "mobile_revealed": 0, "mobile_country": "United Kingdom",
+             "mobile_country_code": "GB",
+             "person_id": "aaaad3b9aaec9a96bbcecc54",
+             "linkedin_member_id": "ACoAAA123", "current_job_key": "10686032",
+             "city": "London", "country_code": "GB",
+             "job_history": [{"title": "Analyst", "company_name": "DWS"}],
+             "company": {"name": "Amundi", "domain": "amundi.com"}},
+            self.co, "prospeo")
+        row = db.query("SELECT * FROM contacts_prospeo WHERE person_id=?",
+                       ["aaaad3b9aaec9a96bbcecc54"])[0]
+        # the masked phone survives in every variant Prospeo gives
+        self.assertEqual(row["mobile"], "+44 7477 ******")
+        self.assertEqual(row["mobile_national"], "07477 ******")
+        self.assertEqual(row["mobile_international"], "+44 7477 ******")
+        self.assertEqual(row["email"], "s********@amundi.com")
+        self.assertEqual(row["email_verification_method"], "bounceban")
+        self.assertEqual(row["linkedin_member_id"], "ACoAAA123")
+        self.assertIn("DWS", row["job_history"])
+        # the unified contact keeps only the clean fields
+        c = db.query("SELECT * FROM contacts WHERE first_name='Stefano'")[0]
+        self.assertEqual(c["email"] or "", "")
+        self.assertEqual(c["phone"] or "", "")
+        self.assertEqual(c["source"], "prospeo")
+
+    def test_a_hunter_row_lands_in_contacts_hunter(self):
+        people_store.upsert(
+            {"email": "meghan.bossone@aqr.com", "first_name": "Meghan",
+             "last_name": "Bossone", "position": "Vice President",
+             "position_raw": "Vice President Middle Office",
+             "seniority": "executive", "department": "executive",
+             "decision_maker": 1, "email_type": "personal",
+             "email_sources": '[{"domain": "linkedin.com"}]',
+             "confidence": 99},
+            self.co, "hunter")
+        row = db.query("SELECT * FROM contacts_hunter WHERE email=?",
+                       ["meghan.bossone@aqr.com"])[0]
+        self.assertEqual(row["decision_maker"], 1)
+        self.assertEqual(row["email_type"], "personal")
+        self.assertEqual(row["position_raw"], "Vice President Middle Office")
+        c = db.query("SELECT * FROM contacts WHERE last_name='Bossone'")[0]
+        self.assertEqual(c["source"], "hunter")
+
+    def test_a_masked_address_is_kept_as_evidence_not_as_an_address(self):
+        """'s****@firm.com' is not an address - but it is a person we hold.
+
+        It lives in email_masked, never in `email`, and it retires as soon as
+        the firm's convention lets us reconstruct a real candidate.
+        """
         import people_store
         people_store.upsert({"first_name": "Stefano", "last_name": "Iannalfo",
                              "email": "s********@amundi.com"}, self.co, "prospeo")
         row = db.query("SELECT * FROM contacts WHERE company_name='Amundi'")[0]
         self.assertEqual(row["email"] or "", "")
-        self.assertEqual(row["email_status"], "missing")
+        self.assertEqual(row["email_masked"], "s********@amundi.com")
+
+    def test_a_masked_address_becomes_a_candidate_once_the_pattern_is_known(self):
+        """The reconstruction pass: masked evidence + known pattern = guessed mail."""
+        import people_store
+        people_store.upsert({"first_name": "Stefano", "last_name": "Iannalfo",
+                             "email": "s********@amundi.com"}, self.co, "prospeo")
+        # One real address teaches the firm its convention...
+        people_store.upsert({"first_name": "Jane", "last_name": "Doe",
+                             "email": "jane.doe@amundi.com",
+                             "email_verification": "valid"}, self.co, "hunter")
+        co = db.query("SELECT * FROM companies WHERE name='Amundi'")[0]
+        self.assertEqual(co["email_pattern"], "first.last")
+        # ...then the reconstruction turns the masked person into a candidate.
+        people_store.reconstruct_missing(co["id"])
+        row = db.query("SELECT * FROM contacts WHERE first_name='Stefano'")[0]
+        self.assertEqual(row["email"], "stefano.iannalfo@amundi.com")
+        self.assertEqual(row["email_source"], "pattern")
+        self.assertEqual(row["email_masked"], "")
 
     def test_career_history_is_stored_and_replaced_not_duplicated(self):
         import people_store

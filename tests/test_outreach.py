@@ -17,8 +17,8 @@ class TestFollowUps(unittest.TestCase):
         db.execute("DELETE FROM contacts WHERE source='test'")
         self.co = db.resolve_company("Jane Street")
         db.execute("INSERT INTO contacts (first_name,last_name,job_title,company_id,company_name,"
-                   "hook,source) VALUES ('Test','Subject','Quantitative Researcher',?,'Jane Street',"
-                   "'a hook','test')", [self.co["id"]])
+                   "source) VALUES ('Test','Subject','Quantitative Researcher',?,'Jane Street',"
+                   "'test')", [self.co["id"]])
         self.cid = db.query("SELECT id FROM contacts WHERE source='test'")[0]["id"]
         self.oid = db.execute(
             "INSERT INTO outreach (contact_id,subject,body,status) VALUES (?,?,?,'sent')",

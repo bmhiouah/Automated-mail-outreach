@@ -58,9 +58,8 @@ async function loadDash(){
     </div>`).join('');
   const rate=(x)=>`<span class="${x>=20?'tag good':(x>0?'tag warn':'tag gray')}">${x}%</span>`;
   $('#an-type').innerHTML = a.by_type.length ? `<table><thead><tr><th>firm type</th>
-    <th>contacts</th><th>contacted</th><th>replied</th><th>reply rate</th></tr></thead><tbody>
-    ${a.by_type.map(r=>`<tr><td>${esc(r.k)}</td><td>${r.contacts}</td><td>${r.contacted}</td>
-      <td>${r.replied}</td><td>${rate(r.reply_rate)}</td></tr>`).join('')}</tbody></table>`
+    <th>contacts</th><th>emailed</th></tr></thead><tbody>
+    ${a.by_type.map(r=>`<tr><td>${esc(r.k)}</td><td>${r.contacts}</td><td>${r.emailed}</td></tr>`).join('')}</tbody></table>`
     : '<span class="muted">no contacts yet</span>';
   $('#an-tpl').innerHTML = a.by_template.length ? `<table><thead><tr><th>template</th>
     <th>sent</th><th>replied</th><th>reply rate</th></tr></thead><tbody>
@@ -263,31 +262,24 @@ function addContactFor(companyId, companyName){
 }
 
 /* ---------- contacts ---------- */
-// A guessed address looks identical to a real one in a table. The badge is the
-// only thing telling you which is which before you press send.
-function emailBadge(status){
-  const s = (status||'').toLowerCase();
-  if(!s || s==='missing') return '<span class="tag gray" title="no address">none</span>';
-  if(s==='verified') return '<span class="tag good" title="confirmed by the provider">verified</span>';
-  if(s==='guessed') return '<span class="tag warn" title="rebuilt from the firm pattern">guess</span>';
-  if(s==='bounced') return '<span class="tag bad" title="bounced">bounced</span>';
-  return '<span class="tag gray" title="found, not verified">found</span>';
+// A masked address looks like a real one in a table. The badge is the only
+// thing telling you which is which before you press send.
+function emailBadge(r){
+  if(r.email) return '';
+  if(r.email_masked) return '<span class="tag warn" title="masked Prospeo address - becomes a candidate once the firm pattern is known">masked</span>';
+  return '<span class="tag gray" title="no address">none</span>';
 }
 async function loadContacts(){
   const p = new URLSearchParams();
   if($('#kq').value) p.set('q',$('#kq').value);
-  if($('#kstatus').value) p.set('status',$('#kstatus').value);
   const rows = await api('GET','/api/contacts?'+p.toString());
   $('#kcount').textContent = rows.length+' contacts';
-  const statuses='identified,ready,contacted,replied,positive,negative,closed,blacklist'
-    .split(',').map(t=>`<option value="${t}">${t}</option>`).join('');
   // Location and level come from the harvesters; showing them is the whole
   // point of collecting them, so they are columns and not hidden in a modal.
   $('#ktable').innerHTML = `<thead><tr><th style="width:170px">Name</th><th style="width:180px">Company</th>
     <th style="width:180px">Title</th><th style="width:100px">Desk</th><th style="width:110px">Level</th>
     <th style="width:150px">Location</th>
-    <th style="width:215px">Email</th><th style="width:130px">Hook</th>
-    <th style="width:120px">Status</th><th style="width:55px">Prio</th><th></th></tr></thead><tbody>`+
+    <th style="width:215px">Email</th><th style="width:80px">Source</th><th></th></tr></thead><tbody>`+
     rows.map(r=>`<tr>
       <td><input class="cell" value="${esc(r.first_name)}" data-id="${r.id}" data-f="first_name">
           <input class="cell" value="${esc(r.last_name)}" data-id="${r.id}" data-f="last_name"></td>
@@ -298,22 +290,19 @@ async function loadContacts(){
       <td><input class="cell" value="${esc(r.seniority_level||r.seniority||'')}" data-id="${r.id}" data-f="seniority_level"></td>
       <td><input class="cell" value="${esc(r.city||'')}" data-id="${r.id}" data-f="city"
           title="${esc(r.location_raw||'')}"></td>
-      <td><input class="cell" value="${esc(r.email||'')}" placeholder="${esc(r.email_guess||'')}" data-id="${r.id}" data-f="email">
-          ${emailBadge(r.email_status)}</td>
-      <td><input class="cell" value="${esc(r.hook||'')}" data-id="${r.id}" data-f="hook"></td>
-      <td><select class="cell" data-id="${r.id}" data-f="status">${statuses.replace(`value="${r.status||''}"`,`value="${r.status||''}" selected`)}}</select></td>
-      <td><input class="cell" value="${esc(r.priority)}" data-id="${r.id}" data-f="priority" style="width:50px"></td>
+      <td><input class="cell" value="${esc(r.email||'')}" placeholder="${esc(r.email_masked||r.email_guess||'')}" data-id="${r.id}" data-f="email">
+          ${emailBadge(r)}</td>
+      <td><span class="tag gray">${esc(r.source||'')}</span></td>
       <td><button class="ghost sm" onclick="toCompose(${r.id})">Mail</button>
           <button class="ghost sm" onclick="del('contacts',${r.id},loadContacts)">×</button></td></tr>`).join('')+'</tbody>';
   bindCells('#ktable','contacts', loadContacts);
 }
 async function addContact(){
   const b = {first_name:$('#k-first').value, last_name:$('#k-last').value, job_title:$('#k-title').value,
-    company_name:$('#k-company').value, email:$('#k-email').value, linkedin_url:$('#k-linkedin').value,
-    hook:$('#k-hook').value};
+    company_name:$('#k-company').value, email:$('#k-email').value, linkedin_url:$('#k-linkedin').value};
   if(!b.first_name && !b.last_name) return;
   await api('POST','/api/contacts',b);
-  ['#k-first','#k-last','#k-title','#k-email','#k-linkedin','#k-hook'].forEach(x=>$(x).value='');
+  ['#k-first','#k-last','#k-title','#k-email','#k-linkedin'].forEach(x=>$(x).value='');
   loadContacts(); loadDash();
 }
 async function importContacts(){

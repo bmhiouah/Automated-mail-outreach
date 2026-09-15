@@ -19,9 +19,6 @@ from api.rows import insert_row          # noqa: E402
 
 def api_contacts(params):
     where, args = [], []
-    if params.get("status"):
-        where.append("c.status=?")
-        args.append(params["status"][0])
     if params.get("company_id"):
         where.append("c.company_id=?")
         args.append(params["company_id"][0])
@@ -33,7 +30,7 @@ def api_contacts(params):
            "FROM contacts c LEFT JOIN companies co ON co.id = c.company_id")
     if where:
         sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY c.priority ASC, c.updated_at DESC"
+    sql += " ORDER BY c.updated_at DESC"
     rows = db.query(sql, args)
     for r in rows:
         if not r.get("email"):

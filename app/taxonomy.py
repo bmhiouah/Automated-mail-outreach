@@ -17,13 +17,12 @@ COMPANY_FIELDS = ["name", "domain", "type", "subtype", "hq_city", "hq_country",
                   "linkedin_url", "twitter", "ticker"]
 CONTACT_FIELDS = ["first_name", "last_name", "job_title", "desk", "seniority",
                   "company_id", "company_name", "city", "country", "email",
-                  "email_status", "email_source", "linkedin_url", "hook",
-                  "source", "priority", "status", "tags", "notes",
+                  "email_source", "linkedin_url",
+                  "source",
                   # harvested person data (see app/providers/)
                   "full_name", "position_raw", "headline", "department",
                   "seniority_level", "location_raw", "state", "country_code",
-                  "timezone", "phone", "email_confidence", "email_verified_at",
-                  "sources", "last_seen_at", "enriched_at"]
+                  "timezone", "phone", "email_masked"]
 OUTREACH_FIELDS = ["contact_id", "channel", "template_id", "subject", "body",
                    "status", "sent_at", "followup_stage", "next_followup_at",
                    "replied_at", "reply_snippet", "outcome", "notes"]

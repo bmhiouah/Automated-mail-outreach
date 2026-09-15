@@ -121,10 +121,9 @@ def _values(person, company):
         "timezone": _first(person, "timezone") or "",
         "linkedin_url": _first(person, "linkedin_url", "linkedin") or "",
         "phone": _first(person, "phone", "phone_number") or "",
-        "email_confidence": _first(person, "email_confidence", "confidence") or None,
-        "email_verified_at": _first(person, "email_verified_at", "verification_date") or "",
-        "last_seen_at": _first(person, "last_seen_at") or "",
     }
+    # Confidence and verification dates live in the per-source tables now;
+    # the unified contact keeps only the verdict (email_status).
     if seniority:
         v["seniority"] = seniority
     if desk:
@@ -145,6 +144,94 @@ def _merge(existing, incoming):
     return sets, args
 
 
+# --------------------------------------------------------------- per-source rows
+# The raw provider payload lands in its own table before the unified merge, so
+# nothing a provider offers is ever lost - masked phone variants included.
+# `contacts` is the curated vertical concat of these two, with `source` set.
+
+HUNTER_ROW = ["domain", "email", "email_type", "confidence", "first_name",
+              "last_name", "position", "position_raw", "seniority", "department",
+              "decision_maker", "linkedin", "twitter", "phone_number",
+              "verification_status", "verification_date", "sources", "company_name"]
+
+PROSPEO_ROW = ["person_id", "first_name", "last_name", "full_name", "linkedin_url",
+               "linkedin_member_id", "current_job_title", "current_job_key",
+               "headline", "last_job_change_detected_at", "email", "email_revealed",
+               "email_status", "email_verification_method", "email_mx_provider",
+               "mobile", "mobile_national", "mobile_international", "mobile_status",
+               "mobile_revealed", "mobile_country", "mobile_country_code",
+               "city", "state", "country", "country_code", "time_zone",
+               "skills", "job_history", "company"]
+
+# provider normaliser key -> contacts_hunter column
+HUNTER_MAP = {
+    "domain": "domain", "email": "email", "email_type": "email_type",
+    "confidence": "confidence", "first_name": "first_name", "last_name": "last_name",
+    "position": "position", "position_raw": "position_raw", "seniority": "seniority",
+    "department": "department", "decision_maker": "decision_maker",
+    "linkedin": "linkedin", "twitter": "twitter", "phone": "phone_number",
+    "verification_status": "verification_status",
+    "verification_date": "verification_date", "email_sources": "sources",
+}
+
+# provider normaliser key -> contacts_prospeo column
+PROSPEO_MAP = {
+    "person_id": "person_id", "first_name": "first_name", "last_name": "last_name",
+    "full_name": "full_name", "linkedin_url": "linkedin_url",
+    "linkedin_member_id": "linkedin_member_id",
+    "job_title": "current_job_title", "current_job_key": "current_job_key",
+    "headline": "headline", "last_job_change": "last_job_change_detected_at",
+    "email_raw": "email", "email_revealed": "email_revealed",
+    "email_verification": "email_status",
+    "email_verification_method": "email_verification_method",
+    "email_mx_provider": "email_mx_provider",
+    "phone_masked_or_real": "mobile",           # verbatim: masked or not
+    "mobile_national": "mobile_national",
+    "mobile_international": "mobile_international",
+    "phone_status": "mobile_status", "mobile_revealed": "mobile_revealed",
+    "mobile_country": "mobile_country", "mobile_country_code": "mobile_country_code",
+    "city": "city", "state": "state", "country": "country",
+    "country_code": "country_code", "timezone": "time_zone",
+}
+
+
+def save_source_row(person, company, provider):
+    """Write one provider payload to contacts_<provider>, verbatim.
+
+    Runs inside upsert(), before the unified merge. Masked or empty values are
+    stored as-is: this table is the record of what the API actually said.
+    Returns the row id, or None when there is nothing to key on.
+    """
+    if provider == "hunter":
+        table, cols, mapping = "contacts_hunter", HUNTER_ROW, HUNTER_MAP
+        person = dict(person, domain=(company or {}).get("domain") or "",
+                      company_name=(company or {}).get("name") or "")
+        key = "email"
+    else:
+        table, cols, mapping = "contacts_prospeo", PROSPEO_ROW, PROSPEO_MAP
+        person = dict(person)
+        # mobile: the verbatim value - masked or real - beats either alone
+        person["phone_masked_or_real"] = (person.get("email_raw") and "") or \
+            person.get("phone_masked") or person.get("phone")
+        key = "person_id"
+    keyval = person.get(key)
+    if keyval is None or (isinstance(keyval, str) and not keyval.strip()):
+        return None
+    values = []
+    for col in cols:
+        src = next((k for k, v in mapping.items() if v == col), None)
+        v = person.get(src)
+        if provider == "prospeo" and col in ("job_history", "company"):
+            v = person.get(col)               # dicts/lists, stored as JSON
+        if isinstance(v, (dict, list)):
+            v = json.dumps(v)
+        values.append(v)
+    placeholders = ", ".join("?" for _ in cols)
+    return db.execute(
+        f"INSERT OR REPLACE INTO {table} ({', '.join(cols)}) VALUES ({placeholders})",
+        values)
+
+
 def upsert(person, company, provider="hunter"):
     """Insert or update one harvested person. Returns (outcome, contact_id).
 
@@ -157,49 +244,62 @@ def upsert(person, company, provider="hunter"):
         return "skipped", None
 
     email = _norm(person.get("email"))
+    masked_email = _norm(person.get("email_masked"))
     # An address whose local part is masked ("s****@firm.com") is not an
-    # address. Storing it would poison the column and the pattern engine.
+    # address. It is evidence, though: kept in email_masked, out of `email`,
+    # so the pattern engine and the composer never see a half-address.
     if email and "*" in email.split("@")[0]:
+        masked_email = masked_email or email
         email = ""
-    vstatus = _first(person, "email_verification", "verification_status").lower()
-    new_status = "verified" if vstatus == "valid" else ("unknown" if email else "missing")
+
+    # The full payload is recorded in its own table first, verbatim - masked
+    # values included - before the unified merge keeps only what `contacts`
+    # holds. If this fails there is nothing to merge, so no row either way.
+    save_source_row(person, company, provider)
+
+    # A masked address still proves the domain after the @: "s****@amundi.com"
+    # is enough to attach a person to the right firm before anyone is revealed,
+    # and that domain is the pattern_after half of the convention.
+    if masked_email and company and not (company.get("domain") or "").strip():
+        from email_pattern import clean_domain
+        dom = clean_domain(masked_email.rsplit("@", 1)[-1])
+        if dom:
+            db.execute("UPDATE companies SET domain=?, updated_at=? WHERE id=? "
+                       "AND (domain IS NULL OR domain='')", [dom, now(), company["id"]])
+            company["domain"] = dom
 
     values = _values(person, company)
+    # A masked mobile is a hint, not a number: it stays out of `phone`.
+    if "*" in (values.get("phone") or ""):
+        values["phone"] = ""
+    values["email_masked"] = masked_email
     existing = find(person, company)
-    source_tag = provider
 
     if existing:
         sets, args = _merge(existing, values)
 
-        # Address: fill when empty, or upgrade a guess to something real.
-        if email:
-            cur = (existing.get("email") or "").strip()
-            cur_status = (existing.get("email_status") or "").strip()
-            if not cur or EMAIL_TRUST.get(new_status, 0) > EMAIL_TRUST.get(cur_status, 0):
-                sets += ["email=?", "email_status=?", "email_source=?"]
-                args += [email, new_status, provider]
-
-        # Remember which providers contributed to this row.
-        seen = [s for s in (existing.get("sources") or "").split(",") if s]
-        if source_tag not in seen:
-            seen.append(source_tag)
-            sets.append("sources=?")
-            args.append(",".join(seen))
+        # Address: fill when it is empty, never overwrite. A pasted or already
+        # harvested address outranks anything a later source claims; the
+        # per-source tables keep every variant for the audit anyway.
+        if email and not (existing.get("email") or "").strip():
+            sets += ["email=?", "email_source=?"]
+            args += [email, provider]
+            # A real address retires the masked evidence.
+            sets.append("email_masked=?")
+            args.append("")
 
         if not sets:
             return "unchanged", existing["id"]
-        sets += ["source_updated=?", "updated_at=?"]
-        args += [now(), now(), existing["id"]]
+        sets += ["updated_at=?"]
+        args += [now(), existing["id"]]
         db.execute(f"UPDATE contacts SET {', '.join(sets)} WHERE id=?", args)
         contact_id = existing["id"]
         outcome = "updated"
     else:
         cols = ["first_name", "last_name", "company_id", "company_name", "source",
-                "sources", "status", "priority", "email", "email_status",
-                "email_source", "source_updated", "updated_at"]
-        vals = [first, last, company["id"], company["name"], provider, source_tag,
-                "identified", 3, email, new_status if email else "missing",
-                provider if email else "", now(), now()]
+                "email", "email_source", "updated_at"]
+        vals = [first, last, company["id"], company["name"], provider,
+                email, provider if email else "", now()]
         for f, v in values.items():
             if v not in (None, ""):
                 cols.append(f)
@@ -234,29 +334,21 @@ def save_job_history(contact_id, rows, provider="prospeo"):
         db.execute(
             "INSERT INTO person_job_history (contact_id,title,company_name,company_id,"
             "seniority,start_year,start_month,end_year,end_month,duration_months,"
-            "is_current,source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+            "is_current,departments,source) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
             [contact_id, title, j.get("company_name") or "", co["id"] if co else None,
              j.get("seniority") or "", j.get("start_year"), j.get("start_month"),
              j.get("end_year"), j.get("end_month"), j.get("duration_months"),
-             1 if j.get("is_current") else 0, provider])
+             1 if j.get("is_current") else 0,
+             ", ".join(j.get("departments") or []), provider])
         n += 1
     return n
 
 
 def note_source_id(contact_id, provider, external_id):
-    """Remember the provider's own id so we can re-enrich without re-searching."""
-    if not (contact_id and external_id):
-        return
-    rows = db.query("SELECT source_ids FROM contacts WHERE id=?", [contact_id])
-    ids = {}
-    if rows and rows[0].get("source_ids"):
-        try:
-            ids = json.loads(rows[0]["source_ids"])
-        except ValueError:
-            ids = {}
-    ids[provider] = external_id
-    db.execute("UPDATE contacts SET source_ids=? WHERE id=?",
-               [json.dumps(ids), contact_id])
+    """No longer needed: the per-source tables (contacts_prospeo etc.) hold the
+    provider's own id, keyed by person_id / (domain, email). Kept as a no-op so
+    older callers do not break."""
+    return None
 
 
 def resolve_or_create_company(domain=None, name=None, enrichment=None):
@@ -312,6 +404,14 @@ def fill_company(company, enrichment, provider="prospeo"):
 
 
 def reconstruct_missing(company_id=None):
-    """Give an address to everyone we can, from the firm's known convention."""
-    from email_pattern import apply_guesses
-    return apply_guesses(company_id)
+    """Give an address to everyone we can, from the firm's known convention.
+
+    Two passes, in this order: empty addresses first (plain fills), then the
+    masked ones - because every address the first pass writes is evidence the
+    second pass can lean on when the pattern engine re-learns the firm.
+    """
+    from email_pattern import apply_guesses, apply_masked
+    out = apply_guesses(company_id)
+    masked = apply_masked(company_id)
+    return {"updated": out["updated"] + masked["updated"],
+            "from_masked": masked["updated"]}

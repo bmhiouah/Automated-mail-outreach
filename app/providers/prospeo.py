@@ -226,11 +226,20 @@ def _unmasked(value):
     return "" if "*" in str(value) else str(value).strip()
 
 
+def _masked(value):
+    """The masked form, if it is masked - kept as evidence, never as an address."""
+    v = str(value or "").strip()
+    return v if "*" in v else ""
+
+
 def normalise_person(result):
     """Turn one search result into our flat person shape.
 
-    Masked email/phone are dropped rather than stored: a half-address looks
-    like data and would break the pattern learner that reconstructs addresses.
+    Masked email/phone are kept in their own columns (email_masked /
+    phone_masked): they are not addresses or numbers, so they never reach
+    `email`, `phone` or the pattern learner - but they prove we hold the
+    person, and the reconstruction pass turns them into real candidates
+    once the firm's convention is known.
     """
     person = result.get("person") or {}
     company = result.get("company") or {}
@@ -266,9 +275,25 @@ def normalise_person(result):
         "seniority": seniority,
         "linkedin_url": person.get("linkedin_url") or "",
         "email": _unmasked(email.get("email")),
+        "email_raw": (email.get("email") or "").strip(),        # masked or real, verbatim
+        "email_revealed": 1 if email.get("revealed") else 0,
+        "email_masked": _masked(email.get("email")),
         "email_verification": (email.get("status") or "").lower(),
-        "email_masked": not _unmasked(email.get("email")) and bool(email.get("email")),
+        "email_verification_method": (email.get("verification_method") or "").lower(),
+        "email_mx_provider": email.get("email_mx_provider") or "",
         "phone": _unmasked(mobile.get("mobile")),
+        "phone_masked": _masked(mobile.get("mobile")),
+        "phone_status": (mobile.get("status") or "").lower(),
+        # every variant Prospeo can give, verbatim, for contacts_prospeo
+        "mobile_national": (mobile.get("mobile_national") or "").strip(),
+        "mobile_international": (mobile.get("mobile_international") or "").strip(),
+        "mobile_revealed": 1 if mobile.get("revealed") else 0,
+        "mobile_country": mobile.get("mobile_country") or "",
+        "mobile_country_code": mobile.get("mobile_country_code") or "",
+        "linkedin_member_id": person.get("linkedin_member_id") or "",
+        "current_job_key": person.get("current_job_key") or "",
+        "skills": ", ".join(person.get("skills") or []),
+        "last_job_change": person.get("last_job_change_detected_at") or "",
         "city": location.get("city") or "",
         "state": location.get("state") or "",
         "country": location.get("country") or "",
@@ -288,11 +313,13 @@ def normalise_job_history(person):
     for j in (person.get("job_history") or []):
         out.append({
             "title": j.get("title"), "company_name": j.get("company_name"),
+            "company_id": j.get("company_id"),
             "seniority": j.get("seniority"), "start_year": j.get("start_year"),
             "start_month": j.get("start_month"), "end_year": j.get("end_year"),
             "end_month": j.get("end_month"),
             "duration_months": j.get("duration_in_months"),
             "is_current": bool(j.get("current")),
+            "departments": j.get("departments") or [],
         })
     return out
 

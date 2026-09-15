@@ -24,7 +24,7 @@ def api_outreach(params):
         where.append("o.next_followup_at IS NOT NULL AND o.next_followup_at <= ?")
         args.append(date.today().isoformat())
     sql = ("SELECT o.*, c.first_name, c.last_name, c.company_name, c.email AS contact_email, "
-           "c.city AS contact_city, c.desk, c.hook "
+           "c.city AS contact_city, c.desk "
            "FROM outreach o LEFT JOIN contacts c ON c.id = o.contact_id")
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -35,12 +35,9 @@ def api_mark_sent(payload):
     oid = payload.get("id")
     days = int(payload.get("followup_days") or 7)
     follows = payload.get("follows")           # the mail this one is a follow-up to
-    db.execute(
-        "UPDATE outreach SET status='sent', sent_at=COALESCE(sent_at, ?), "
-        "next_followup_at=?, updated_at=? WHERE id=?",
-        [now_iso(), (date.today() + timedelta(days=days)).isoformat(), now_iso(), oid])
-    db.execute("UPDATE contacts SET status='contacted', updated_at=? WHERE id=(SELECT contact_id FROM outreach WHERE id=?)",
-               [now_iso(), oid])
+    db.execute("UPDATE outreach SET status='sent', sent_at=COALESCE(sent_at, ?), "
+               "next_followup_at=?, updated_at=? WHERE id=?",
+               [now_iso(), (date.today() + timedelta(days=days)).isoformat(), now_iso(), oid])
     if follows:
         # The follow-up has gone out, so the original must stop being "due" -
         # otherwise the dashboard keeps nagging about a thread already bumped.

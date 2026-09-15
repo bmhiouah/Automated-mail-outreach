@@ -323,6 +323,7 @@ def enrich_email(email, api_key=None, force=False):
         "github": (d.get("github") or {}).get("handle"),
         "linkedin": (d.get("linkedin") or {}).get("handle"),
         "avatar": d.get("avatar"), "bio": d.get("bio"), "phone": d.get("phone"),
+        "fuzzy": 1 if d.get("fuzzy") else 0,
         "last_seen_at": d.get("activeAt"), "raw": d,
     }
 
@@ -379,13 +380,21 @@ def map_pattern(hunter_pattern):
 
 
 def _person(e):
-    """Normalise one Domain Search email row into our flat person shape."""
+    """Normalise one Domain Search email row into our flat person shape.
+
+    Names follow the shared contact vocabulary (see people_store._values):
+    Hunter's `type` becomes email_type, its `sources` list is kept as JSON
+    in email_sources so we can always show where an address came from.
+    """
+    sources = e.get("sources") or []
     return {
         "email": (e.get("value") or "").strip().lower() or None,
         "first_name": e.get("first_name"), "last_name": e.get("last_name"),
         "position": e.get("position"), "position_raw": e.get("position_raw"),
         "seniority": e.get("seniority"), "department": e.get("department"),
-        "decision_maker": e.get("decision_maker"),
+        "decision_maker": 1 if e.get("decision_maker") else 0,
+        "email_type": e.get("type"),
+        "email_sources": json.dumps(sources) if sources else "",
         "linkedin": e.get("linkedin"), "twitter": e.get("twitter"),
         "phone": e.get("phone_number"),
         "confidence": e.get("confidence"),

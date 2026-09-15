@@ -68,9 +68,8 @@ def api_import_people(payload):
         if desk:
             fields["desk"] = desk
         if fields["email"]:
-            # A pasted address is real evidence, not a guess - keep them apart
-            # so 'Fill empty emails from patterns' never overwrites it.
-            fields["email_status"] = "verified"
+            # A pasted address is real evidence: it stamps the provenance, and
+            # 'Fill empty emails from patterns' only fills empty ones anyway.
             fields["email_source"] = "pasted"
         existing = db.query(
             "SELECT id FROM contacts WHERE lower(first_name)=lower(?) "

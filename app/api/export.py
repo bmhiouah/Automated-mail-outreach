@@ -17,8 +17,8 @@ from api.contacts import api_contacts           # noqa: E402
 from api.sourcing import api_sourcing_markdown  # noqa: E402
 
 CONTACT_COLUMNS = ["first_name", "last_name", "job_title", "desk", "company_name",
-                   "email", "email_status", "linkedin_url", "city", "hook",
-                   "priority", "status", "source", "notes"]
+                   "email", "email_masked", "linkedin_url", "city",
+                   "source"]
 
 
 def api_export_sourcing(params):

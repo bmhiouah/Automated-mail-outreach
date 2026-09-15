@@ -64,10 +64,10 @@ def load_demo():
             co = db.resolve_company(company)
             db.execute(
                 "INSERT OR IGNORE INTO contacts (first_name,last_name,job_title,desk,seniority,"
-                "company_id,company_name,city,email,email_status,hook,source,priority,status) "
-                "VALUES (?,?,?,?,?,?,?,?,'','unknown',?,'demo',?,'identified')",
+                "company_id,company_name,city,source) "
+                "VALUES (?,?,?,?,?,?,?,?,'demo')",
                 [first, last, title, desk, seniority, co["id"] if co else None,
-                 company, city, hook, prio])
+                 company, city])
     prof = get_profile()
     if not (prof.get("full_name") or "").strip():
         db.execute("UPDATE profile SET " + ", ".join(f"{k}=?" for k in DEMO_PROFILE),

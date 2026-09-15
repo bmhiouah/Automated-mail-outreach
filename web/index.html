@@ -162,7 +162,6 @@
         <datalist id="company-list"></datalist>
         <input id="k-email" placeholder="email (optional)" style="width:200px">
         <input id="k-linkedin" placeholder="LinkedIn URL" style="width:200px">
-        <input id="k-hook" placeholder="Hook / personalisation angle" style="width:280px">
         <button class="act" onclick="addContact()">Add</button>
       </div>
     </div>
@@ -208,11 +207,6 @@
       <h2>Contacts</h2>
       <div class="row">
         <input id="kq" placeholder="Search name, company, title" style="width:240px">
-        <select id="kstatus"><option value="">Any status</option>
-          <option value="identified">identified</option><option value="ready">ready</option>
-          <option value="contacted">contacted</option><option value="replied">replied</option>
-          <option value="positive">positive</option><option value="negative">negative</option>
-          <option value="closed">closed</option><option value="blacklist">blacklist</option></select>
         <button class="ghost sm" onclick="loadContacts()">Apply</button>
         <button class="ghost sm" onclick="applyGuesses()">Fill empty emails from patterns</button>
         <button class="ghost sm" onclick="retag()">Auto-tag desk &amp; seniority</button>
