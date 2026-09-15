@@ -221,6 +221,102 @@ def table_exists(name):
     return bool(r)
 
 
+# --------------------------------------------------------------- harvester schema
+# Columns added to existing tables after they were first created. executescript()
+# only runs CREATE TABLE IF NOT EXISTS, so these must be applied with ALTER TABLE
+# on any database that already exists. ensure_schema() is idempotent and safe to
+# call on every boot.
+COMPANY_EXTRA_COLUMNS = [
+    "description TEXT", "founded_year INTEGER", "headcount TEXT", "employee_count INTEGER",
+    "industry TEXT", "company_type TEXT", "keywords TEXT", "address TEXT",
+    "linkedin_url TEXT", "twitter TEXT", "ticker TEXT", "source TEXT",
+    "source_updated TEXT",
+]
+
+CONTACT_EXTRA_COLUMNS = [
+    "middle_name TEXT", "headline TEXT", "role TEXT", "department TEXT",
+    "seniority_level TEXT", "decision_maker INTEGER", "location_raw TEXT", "state TEXT",
+    "country_code TEXT", "latitude REAL", "longitude REAL", "timezone TEXT",
+    "twitter TEXT", "github TEXT", "phone TEXT", "avatar TEXT", "bio TEXT",
+    "email_confidence INTEGER", "email_verified_at TEXT", "last_seen_at TEXT",
+    "enriched_at TEXT", "evidence TEXT", "source_updated TEXT",
+]
+
+
+def ensure_schema(verbose=False):
+    """Create the new tables and add the harvested columns to an existing DB.
+
+    `CREATE TABLE IF NOT EXISTS` in schema.sql handles the new tables; the
+    columns need ALTER TABLE because CREATE TABLE IF NOT EXISTS is a no-op once
+    the table exists. Without this, every INSERT ... column from the harvester
+    would fail on the database the user already has.
+    """
+    init_db()
+    added = []
+    added += ensure_columns("companies", COMPANY_EXTRA_COLUMNS)
+    added += ensure_columns("contacts", CONTACT_EXTRA_COLUMNS)
+    if verbose:
+        print(f"schema: {len(added)} columns added" + (f" ({', '.join(added)})" if added else ""))
+    return added
+
+
+# --------------------------------------------------------------- fetch ledger
+RAW_DIR = os.path.join(BASE, "data", "raw")
+
+
+def fetch_seen(provider, endpoint, request_key):
+    """Has this exact call already been made? Returns the fetch_log row or None.
+
+    The whole point of the ledger: a metered API must never be paid for the same
+    request twice, and a repeated run must resume rather than restart.
+    """
+    rows = query("SELECT * FROM fetch_log WHERE provider=? AND endpoint=? AND request_key=?",
+                 [provider, endpoint, request_key])
+    return rows[0] if rows else None
+
+
+def save_raw(provider, endpoint, request_key, body_bytes):
+    """Write a raw response to data/raw/<provider>/ and index it. Returns (path, sha)."""
+    import hashlib
+    digest = hashlib.sha256(body_bytes).hexdigest()
+    safe = re.sub(r"[^a-zA-Z0-9._-]+", "_", request_key)[:120].strip("_") or "response"
+    folder = os.path.join(RAW_DIR, provider)
+    os.makedirs(folder, exist_ok=True)
+    fname = f"{endpoint}__{safe}__{digest[:8]}.json"
+    full = os.path.join(folder, fname)
+    if not os.path.exists(full):
+        with open(full, "wb") as fh:
+            fh.write(body_bytes)
+    rel = os.path.relpath(full, BASE)
+    execute("INSERT OR REPLACE INTO raw_payload (provider,endpoint,request_key,path,sha256,bytes) "
+            "VALUES (?,?,?,?,?,?)", [provider, endpoint, request_key, rel, digest, len(body_bytes)])
+    return rel, digest
+
+
+def record_fetch(provider, endpoint, request_key, http_status=None, credits=0.0,
+                 ok=True, error=None, raw_path=None, response_hash=None):
+    """Log one external call. Idempotent on (provider, endpoint, request_key)."""
+    execute(
+        "INSERT OR REPLACE INTO fetch_log (provider,endpoint,request_key,http_status,credits,"
+        "ok,error,raw_path,response_hash,fetched_at) VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+        [provider, endpoint, request_key, http_status, credits, 1 if ok else 0,
+         error, raw_path, response_hash])
+    return fetch_seen(provider, endpoint, request_key)
+
+
+def credits_spent(provider=None, since=None):
+    """How much has been spent, optionally for one provider or since a timestamp."""
+    sql = "SELECT COALESCE(SUM(credits),0) n FROM fetch_log WHERE 1=1"
+    args = []
+    if provider:
+        sql += " AND provider=?"
+        args.append(provider)
+    if since:
+        sql += " AND fetched_at >= ?"
+        args.append(since)
+    return query(sql, args)[0]["n"]
+
+
 def seed_files():
     """All companies_seed*.csv files, in deterministic order."""
     files = sorted(glob.glob(os.path.join(BASE, "data", "companies_seed*.csv")))
@@ -295,6 +391,8 @@ if __name__ == "__main__":
         load_seed()
     elif len(sys.argv) > 1 and sys.argv[1] == "briefs":
         print("briefs loaded:", load_briefs())
+    elif len(sys.argv) > 1 and sys.argv[1] == "schema":
+        print("columns added:", ensure_schema(verbose=True))
     else:
         print(__doc__)
         print("usage: python3 app/db.py init|seed")

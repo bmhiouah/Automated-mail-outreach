@@ -25,11 +25,20 @@ PORT = int(os.environ.get("PORT", 8765))
 
 COMPANY_FIELDS = ["name", "domain", "type", "subtype", "hq_city", "hq_country",
                   "market", "email_pattern", "pattern_confidence", "careers_url",
-                  "tier", "status", "notes"]
+                  "tier", "status", "notes",
+                  # harvested profile (see providers/hunter.py)
+                  "description", "founded_year", "headcount", "employee_count",
+                  "industry", "company_type", "keywords", "address",
+                  "linkedin_url", "twitter", "ticker"]
 CONTACT_FIELDS = ["first_name", "last_name", "job_title", "desk", "seniority",
                   "company_id", "company_name", "city", "country", "email",
                   "email_status", "email_source", "linkedin_url", "hook",
-                  "source", "priority", "status", "tags", "notes"]
+                  "source", "priority", "status", "tags", "notes",
+                  # harvested person data
+                  "middle_name", "headline", "role", "department", "seniority_level",
+                  "decision_maker", "location_raw", "state", "country_code",
+                  "latitude", "longitude", "timezone", "twitter", "github",
+                  "phone", "avatar", "bio", "email_confidence"]
 OUTREACH_FIELDS = ["contact_id", "channel", "template_id", "subject", "body",
                    "status", "sent_at", "followup_stage", "next_followup_at",
                    "replied_at", "reply_snippet", "outcome", "notes"]
@@ -1286,6 +1295,10 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     db.init_db()
+    # Additive columns for harvested data. executescript() only runs
+    # CREATE TABLE IF NOT EXISTS, so an existing database needs ALTER TABLE for
+    # anything added to schema.sql since it was created.
+    db.ensure_schema(verbose=True)
     if not db.query("SELECT id FROM templates LIMIT 1"):
         api_seed_templates()
     if not db.query("SELECT id FROM companies LIMIT 1"):

@@ -1,0 +1,12 @@
+# Hunter API key — never commit this
+config.json
+
+# Raw API responses kept by the harvester (data/raw/<provider>/...)
+data/raw/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

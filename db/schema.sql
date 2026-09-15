@@ -21,6 +21,20 @@ CREATE TABLE IF NOT EXISTS companies (
   tier               INTEGER DEFAULT 2,    -- 1 = top priority, 3 = long tail
   status             TEXT DEFAULT 'to_research',  -- to_research|researched|has_contacts|approached|dead
   notes              TEXT,
+  -- harvested company profile (blank = Unknown, never a blocker)
+  description        TEXT,
+  founded_year       INTEGER,
+  headcount          TEXT,                 -- band, e.g. 51-200
+  employee_count     INTEGER,
+  industry           TEXT,
+  company_type       TEXT,                 -- public company | privately held | ...
+  keywords           TEXT,
+  address            TEXT,
+  linkedin_url       TEXT,
+  twitter            TEXT,
+  ticker             TEXT,
+  source             TEXT,                 -- which provider filled this
+  source_updated     TEXT,
   created_at         TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at         TEXT DEFAULT CURRENT_TIMESTAMP
 );
@@ -66,8 +80,34 @@ CREATE TABLE IF NOT EXISTS contacts (
   status        TEXT DEFAULT 'identified', -- identified|ready|contacted|replied|positive|negative|closed|blacklist
   tags          TEXT,
   notes         TEXT,
-  created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
-  updated_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+  -- harvested person data (Hunter Domain Search + Email Enrichment). Kept flat
+  -- here rather than as one JSON blob so "quants in London with a maths
+  -- background" is an ordinary WHERE clause, not a text search.
+  middle_name       TEXT,
+  headline          TEXT,                 -- position_raw, exactly as Hunter saw it
+  role              TEXT,                 -- Hunter's own role classification
+  department        TEXT,                 -- Hunter department (it|finance|research|...)
+  seniority_level   TEXT,                 -- junior|senior|executive (Hunter's)
+  decision_maker    INTEGER,              -- 1/0, as classified by Hunter
+  location_raw      TEXT,                 -- "Framingham, Massachusetts, United States"
+  state             TEXT,
+  country_code      TEXT,
+  latitude          REAL,
+  longitude         REAL,
+  timezone          TEXT,
+  twitter           TEXT,
+  github            TEXT,
+  phone             TEXT,
+  avatar            TEXT,
+  bio               TEXT,
+  email_confidence  INTEGER,              -- Hunter confidence, 0-100
+  email_verified_at TEXT,
+  last_seen_at      TEXT,                 -- activeAt
+  enriched_at       TEXT,                 -- when enrichment last ran on this person
+  evidence          TEXT,                 -- JSON: where each field came from
+  source_updated    TEXT,
+  created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at        TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (first_name, last_name, company_name)
 );
 
@@ -143,6 +183,42 @@ CREATE TABLE IF NOT EXISTS applications (
   updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ---------------------------------------------------------------- FETCH LEDGER
+-- Every external API call is recorded here before its result is trusted. This
+-- is what stops a metered source (Hunter: 50 credits/month on the free tier)
+-- from being paid for twice: harvest.py checks this table first and only spends
+-- a credit on a request key it has not made before. It is also the resume point,
+-- so a run killed halfway continues instead of starting over.
+CREATE TABLE IF NOT EXISTS fetch_log (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider    TEXT NOT NULL,          -- hunter
+  endpoint    TEXT NOT NULL,          -- domain-finder | domain-search | people-find
+  request_key TEXT NOT NULL,          -- normalised params, e.g. "domain=janestreet.com"
+  http_status INTEGER,
+  credits     REAL DEFAULT 0,         -- what this call cost, 0 for free endpoints
+  ok          INTEGER DEFAULT 1,
+  error       TEXT,
+  raw_path    TEXT,                   -- file under data/raw/ holding the response
+  response_hash TEXT,
+  fetched_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (provider, endpoint, request_key)
+);
+
+-- Where the raw payloads live. Kept in the DB (not just files) so a query can
+-- find the original response behind any row without guessing a filename.
+CREATE TABLE IF NOT EXISTS raw_payload (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  provider    TEXT NOT NULL,
+  endpoint    TEXT NOT NULL,
+  request_key TEXT NOT NULL,
+  path        TEXT NOT NULL,          -- relative to the project root
+  sha256      TEXT,
+  bytes       INTEGER,
+  created_at  TEXT DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (provider, endpoint, request_key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_fetch_log_key       ON fetch_log(provider, endpoint, request_key);
 CREATE INDEX IF NOT EXISTS idx_contacts_company    ON contacts(company_id);
 CREATE INDEX IF NOT EXISTS idx_contacts_status     ON contacts(status);
 CREATE INDEX IF NOT EXISTS idx_outreach_contact    ON outreach(contact_id);
