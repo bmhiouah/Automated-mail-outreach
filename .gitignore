@@ -20,6 +20,12 @@ prospeo_*.json
 # Kept on disk, but it must never be committed again.
 Prospeo_API.ipynb
 
+# Scratch notebooks. They are throwaway experiments, they hold real people's
+# data, and `email_sending.ipynb` had a live Gmail app password pasted into a
+# cell - a credential in version control, which is the one thing this file exists
+# to prevent. Kept on disk, never committed again.
+*.ipynb
+
 # Browser profile left by a scraping experiment
 chrome_profile/
 

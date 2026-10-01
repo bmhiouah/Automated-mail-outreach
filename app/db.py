@@ -334,6 +334,7 @@ def ensure_schema(verbose=False):
     added += ensure_columns("companies", COMPANY_EXTRA_COLUMNS)
     added += ensure_columns("contacts", CONTACT_EXTRA_COLUMNS)
     added += ensure_columns("person_job_history", ["departments TEXT"])
+    added += ensure_columns("mail_queue", ["specifics TEXT"])
     added += ensure_columns("pattern_evidence",
                             ["pattern_before TEXT", "pattern_after TEXT"])
 

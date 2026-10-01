@@ -24,13 +24,13 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from domain import Raw  # noqa: E402,F401  (re-exported: server.py sends it)
 
-from api import analytics, applications, companies, compose, contacts  # noqa: E402
-from api import demo, export, maintenance, outreach, patterns, people  # noqa: E402
-from api import profile, rows, sourcing, templates  # noqa: E402
+from api import analytics, companies, compose, contacts, cvs   # noqa: E402
+from api import demo, export, maintenance, outreach, patterns  # noqa: E402
+from api import people, profile, queue, rows, sourcing, templates  # noqa: E402
 
-MODULES = (analytics, applications, companies, compose, contacts, demo, export,
-           maintenance, outreach, patterns, people, profile, rows, sourcing,
-           templates)
+MODULES = (analytics, companies, compose, contacts, cvs, demo,
+           export, maintenance, outreach, patterns, people, profile, queue,
+           rows, sourcing, templates)
 
 # One flat table, in module order. Order is not load-bearing: no two patterns
 # differ only in what a <capture> would match.

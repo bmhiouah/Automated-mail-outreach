@@ -40,6 +40,18 @@ app/harvest.py     the harvester: fills the database from the providers
 app/net.py         the one HTTP door: retry, backoff, per-host throttle
 app/email_pattern.py   learns a firm's address format, rebuilds addresses
 app/people_store.py    identity resolution and merge rules
+app/llm.py         the LLM door. One chat call, metered in fetch_log like any
+                   other paid source, so re-running costs nothing. Env vars
+                   OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL, or an "llm"
+                   block in config.json
+app/mailer.py      the SMTP door. mail.send_mode defaults to "dry": the message
+                   is built and fully checked but never transmitted
+app/api/queue.py   the review queue: pick who to write to, draft, edit, send or
+                   cancel, auto-advance to the next draft. Also /api/todo (who is
+                   left, with filters) and /api/history (who you wrote to)
+app/api/cvs.py     CV variants. The base CV is never overwritten; a tailored one
+                   is proposed, reviewed, and only then attachable to a mail
+app/latex_cv.py    LaTeX resume -> plain text for the profile's cv_text
 app/providers/hunter.py    Hunter.io — firm email conventions, bulk domains
 app/providers/prospeo.py   Prospeo — targeted people, career history, phones
 tests/             the suite on a temp DB: tests/harness.py owns the one
@@ -56,7 +68,109 @@ data/cold_approach.db     your data (not in git - back it up)
 ```
 
 Tables: `companies` · `contacts` · `person_job_history` · `outreach` · `templates` ·
-`profile` · `applications` · `pattern_evidence` · `fetch_log` · `raw_payload`.
+`profile` · `applications` · `pattern_evidence` · `fetch_log` · `raw_payload` ·
+`mail_queue` · `cv_variants` · `contact_touchpoints`.
+
+## The Queue — the whole workflow, top to bottom
+
+The **Queue** tab is where you contact people, and it is built around one rule:
+**a draft is always on screen, and Send or Cancel moves you to the next one by
+itself.** There is no list to click through.
+
+**1 · Who to write to** (top left). Everyone you have *not* contacted, read from
+the touchpoint ledger — so nobody you already emailed can appear, not even if the
+send failed or you cancelled it. Filter by city, firm type, desk, tier, or search
+a name/firm/address; tick people, choose a **model**, and press **Draft**. Each
+draft is one model call written from scratch for that person, and the model that
+wrote it is recorded on the row.
+
+**2 · The mail** (top right). Address, subject, body, editable as much as you like.
+Above the buttons you get:
+
+- **What this draft is built on** — the facts the model says it used, so a claim
+  can be checked against the database before you send it.
+- The address's trust: `verified`, or `guessed` for a reconstruction, which needs
+  an explicit confirmation even after you approve.
+- Everything the mail-quality checker objects to.
+
+**Send** sends it. **Cancel** keeps the draft for the record and does *not* count
+as contact. **Skip** moves on and decides nothing — it comes back to you later.
+Either way the next draft loads itself.
+
+**3 · Waiting on you.** The full list of drafts, for the ones you skipped. Click
+any row to bring it back up. This is a safety net, not the way through the queue.
+
+**4 · Who you have contacted.** The append-only ledger.
+
+### Sending is off by default
+
+`mail.send_mode` is **`dry`** until you change it. In dry mode the message is
+built, every check runs, and nothing is transmitted — so you can rehearse the whole
+flow against real contacts before anything is at risk. To go live, add a `mail`
+block to `config.json` (see `config.example.json`; Gmail wants a 16-character
+**app** password, not your account password) and set `"send_mode": "live"`.
+
+Even live, two things still stop a mail: a **reconstructed** address needs an
+explicit confirmation, because a guessed address that bounces is worse than no
+mail at all; and there is a **daily cap** (40 by default) read from the ledger, so
+it survives a restart.
+
+### Follow-ups go through the queue too
+
+A bump is queued like any other draft, with the original subject kept so it
+threads. It used to be the one mail you could send without reading it, which is
+exactly the thing this workflow exists to prevent.
+
+## The CVs tab — one base document, many adaptations
+
+Your base CV stays in **My profile** and is never overwritten. The CVs tab proposes
+a tailoring for a given firm and role; it arrives **pending**, you read and edit
+it, and only a **validated** variant can be attached to a queued mail. That gate is
+why an unreviewed document can never go out with your name on it.
+
+## Writing the mails
+
+Add to `config.json` (or export env vars — the environment wins, so a key need
+never touch the file):
+
+```bash
+export OPENAI_API_KEY="sk-..."
+export OPENAI_BASE_URL="https://api.openai.com/v1"   # any OpenAI-compatible endpoint
+export OPENAI_MODEL="openai.gpt-oss-120b"
+```
+
+Check it without spending anything, then spend one real call to be sure:
+
+```bash
+python3 app/llm.py           # is it configured?
+python3 app/llm.py --probe   # one real call
+python3 app/llm.py --models  # what this endpoint will actually serve
+```
+
+The model dropdown in the Queue tab is filled from that last list, minus the
+models measured to reject `/chat/completions` on your gateway — on a Bedrock
+endpoint `/models` advertises many models that answer `access_denied` or reject
+the API outright. Pick a different model per batch; each row records which one
+wrote it, so you can split reply rate by model later.
+
+The model is given a closed block of facts — the contact, their career history,
+the firm's brief and live hiring signal, your profile — and told explicitly not to
+invent anything that is not in it. It must follow your nine-paragraph shape:
+
+1. `Hi <name>,`
+2. how you came across them, and the specific reason this firm caught your eye
+3. your 1–2 relevant skills, one concrete thing you did, and why it fits their desk
+4. **the ask** — *do you know if your team, or another team there, is looking for
+   someone with this background?*
+5. an offer of 10–15 minutes, around their schedule
+6. a line about your LinkedIn/CV
+7. a thank-you by name, then `Best,`
+8. the sign-off — **written by the code**, not the model, because models invent
+   phone numbers and profile URLs.
+
+Its drafts are graded by the same `email_gen` checker your templates use, and the
+facts it says it used are shown above the mail so a claim can be checked against
+the database before you send it.
 
 ## Harvesting — how the database fills itself
 

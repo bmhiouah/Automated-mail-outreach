@@ -142,7 +142,10 @@ BANNED_PHRASES = {
     "i hope this finds you well": "the most deleted opener in existence",
     "i am writing to": "just say the thing",
     "i wanted to reach out": "empty preamble - start with the substance",
+    "i am reaching out": "empty preamble - just say what you want",
+    "reaching out because": "name the reason without the frame",
     "reaching out to see": "empty preamble",
+    "reaching out": "empty preamble",
     "passionate": "show it, don't claim it",
     "hard-working": "unverifiable adjective",
     "team player": "unverifiable adjective",
@@ -280,7 +283,7 @@ I'm {{my_full_name}}, {{my_headline}}, based in {{my_city}}.
 
 {{hook}}
 
-I'm reaching out because I'm looking for a {{my_target_roles}} seat and {{company}} is one of the few desks where the work is genuinely {{my_target_roles}}-shaped. I'd rather ask you two questions than guess:
+I'm looking for a {{my_target_roles}} seat, and {{company}} is one of the few desks where the work is genuinely {{my_target_roles}}-shaped. Rather than guess, two questions:
 
 1. Is the team adding headcount in the coming months?
 2. If not now, who owns that decision?

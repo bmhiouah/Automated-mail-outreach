@@ -11,13 +11,12 @@
   <div class="sub">Paris · London · banks, hedge funds, prop &amp; HFT, asset managers. Local only.</div>
   <nav id="nav">
     <button data-tab="dash" class="on">Dashboard</button>
+    <button data-tab="queue">Queue</button>
     <button data-tab="companies">Companies</button>
     <button data-tab="sourcing">Sourcing</button>
     <button data-tab="contacts">Contacts</button>
-    <button data-tab="compose">Compose</button>
+    <button data-tab="cvs">CVs</button>
     <button data-tab="outreach">Outreach</button>
-    <button data-tab="apps">Applications</button>
-    <button data-tab="templates">Templates</button>
     <button data-tab="profile">My profile</button>
   </nav>
 </header>
@@ -217,34 +216,111 @@
     </div>
   </section>
 
-  <!-- COMPOSE -->
-  <section id="tab-compose" class="hide">
+  <!-- QUEUE -->
+  <section id="tab-queue" class="hide">
     <div class="card">
-      <h2>Tailored mail</h2>
-      <div class="row">
-        <select id="pick-contact" style="min-width:300px"></select>
-        <select id="pick-template" style="min-width:260px"></select>
-        <button class="act" onclick="generate()">Generate</button>
-        <button class="ghost" onclick="saveDraft()">Save as draft</button>
-        <button class="ghost" onclick="markSent()">Mark sent (+7d follow-up)</button>
+      <h2>Queue</h2>
+      <div id="q-status"></div>
+    </div>
+
+    <div class="grid2">
+      <!-- Top left: who to write to. -->
+      <div class="card">
+        <h2>1 &middot; Who to write to</h2>
+        <div class="row">
+          <input id="q-f-city" placeholder="City" style="width:120px" list="q-cities">
+          <datalist id="q-cities"></datalist>
+          <select id="q-f-type"><option value="">Any firm type</option></select>
+          <select id="q-f-desk"><option value="">Any desk</option></select>
+          <input id="q-f-search" placeholder="Name, firm or email" style="flex:1;min-width:150px">
+        </div>
+        <div class="row">
+          <select id="q-f-tier"><option value="">Any tier</option>
+            <option value="1">Tier 1 only</option>
+            <option value="2">Tier 2</option>
+            <option value="3">Tier 3</option></select>
+          <label class="muted"><input type="checkbox" id="q-f-pending"> hide people who
+            already have a draft</label>
+          <button class="ghost sm" onclick="loadTodo()">Apply</button>
+          <span class="muted" id="q-todo-count"></span>
+        </div>
+        <div class="scroll" style="max-height:300px"><table id="q-todo"></table></div>
+        <div class="row" style="margin-top:12px">
+          <select id="q-draft-cv" title="Which CV the model should write against"
+                  style="min-width:170px"></select>
+          <select id="q-model" title="Which model writes these drafts"
+                  style="min-width:200px"></select>
+          <button class="act" onclick="draftSelected(this)">Draft for the ticked people</button>
+        </div>
+        <div class="row">
+          <input id="q-gen-note" placeholder="Note for the model, e.g. 'mention my XVA work'" style="width:100%">
+        </div>
+        <div id="q-gen-result"></div>
+        <div class="hint">Everyone here is drawn from the contact ledger, so nobody you have
+          already written to can appear &mdash; not even if their mail failed or you cancelled it.</div>
       </div>
-      <div id="brief"></div>
-      <div id="flags"></div>
-      <div id="score"></div>
-      <div class="row"><input id="m-to" placeholder="recipient" style="width:300px" class="muted"></div>
-      <div class="row"><input id="m-subject" placeholder="subject" style="width:100%"></div>
-      <textarea id="m-body" rows="20"></textarea>
-      <div class="row">
-        <button class="ghost" onclick="checkQuality()">Check quality</button>
-        <button class="act" onclick="openInMail()">Open in mail app</button>
-        <button class="ghost" onclick="copyField('#m-subject',this)">Copy subject</button>
-        <button class="ghost" onclick="copyField('#m-body',this)">Copy body</button>
-        <button class="ghost" onclick="copyAll(this)">Copy both</button>
+
+      <!-- Top right: the mail under review. -->
+      <div class="card">
+        <h2>2 &middot; The mail <span class="muted" id="q-progress"></span></h2>
+        <div class="row">
+          <input id="q-id" type="hidden">
+          <span class="muted" id="q-who">Nothing to review.</span>
+        </div>
+        <div class="row">
+          <input id="q-to" placeholder="To" style="flex:1;min-width:200px">
+          <select id="q-kind" title="How much this address is trusted">
+            <option value="verified">verified</option>
+            <option value="pattern">reconstructed &mdash; confirm before sending</option>
+            <option value="none">unknown</option>
+          </select>
+        </div>
+        <div class="row"><input id="q-subject" placeholder="Subject" style="width:100%"></div>
+        <textarea id="q-body" rows="13" placeholder="Draft some mails on the left and they will appear here."></textarea>
+        <div class="row" style="margin-top:12px">
+          <button class="act" onclick="validateQueueRow()">Send</button>
+          <button class="ghost" onclick="saveQueueRow()">Save edits</button>
+          <button class="ghost" onclick="cancelQueueRow()">Cancel</button>
+          <button class="ghost sm" onclick="copyQueue(this)">Copy</button>
+          <button class="ghost sm" onclick="openQueueInMail()">Open in mail app</button>
+          <button class="ghost sm" onclick="skipQueueRow()">Skip</button>
+        </div>
+        <div class="row" id="q-cvrow" style="display:none">
+          <label class="muted">Attach CV</label>
+          <select id="q-cv"></select>
+        </div>
+        <div id="q-flags"></div>
+        <div id="q-result"></div>
+        <div class="hint">Edit anything. Send sends it; Cancel keeps the draft for the record
+          and does <em>not</em> count as contact. Either way the next draft loads itself.</div>
       </div>
-      <div class="hint" id="mailto-hint">"Open in mail app" hands the subject and body to your
-        default mail client with the recipient pre-filled — then it is one keystroke to send.
-        If nothing happens, your browser has no mail handler registered; use "Copy both".</div>
-      <div class="hint">Edit freely. Anything still showing <code>{{braces}}</code> is a gap in your profile or in this contact's record — fill it before sending.</div>
+    </div>
+
+    <!-- Below: the queue of decisions. -->
+    <div class="card">
+      <h2>3 &middot; Waiting on you <span class="muted" id="q-badge"></span></h2>
+      <div class="row">
+        <select id="q-filter">
+          <option value="pending">Waiting on me</option>
+          <option value="validated">Validated, not sent</option>
+          <option value="failed">Failed to send</option>
+          <option value="sent">Sent</option>
+          <option value="cancelled">Cancelled</option>
+          <option value="">Everything</option>
+        </select>
+        <button class="ghost sm" onclick="loadQueue()">Refresh</button>
+        <span class="muted" id="q-count"></span>
+      </div>
+      <div class="scroll" style="max-height:300px"><table id="q-table"></table></div>
+      <div class="hint">Click any row to bring it up on the right. This list is a safety net for
+        drafts you skip, not the way through them &mdash; the mail above walks you down it.</div>
+    </div>
+
+    <div class="card">
+      <h2>4 &middot; Who you have contacted <span class="muted" id="h-count"></span></h2>
+      <div class="hint">Append-only. Editing a mail, cancelling a draft or clearing your notes can
+        never bring someone back into this list.</div>
+      <div class="scroll" style="max-height:280px"><table id="q-history"></table></div>
     </div>
   </section>
 
@@ -266,45 +342,40 @@
     </div>
   </section>
 
-  <!-- APPLICATIONS -->
-  <section id="tab-apps" class="hide">
+  <!-- CVS -->
+  <section id="tab-cvs" class="hide">
     <div class="card">
-      <h2>Formal applications</h2>
+      <h2>Your base CV <span class="muted" id="cv-base-info"></span></h2>
+      <div class="hint">The base document lives in <b>My profile</b> and is never overwritten by a
+        variant. Tailoring below reads it and produces a separate, reviewable variant — so a
+        bad adaptation costs one click, not a rewrite.</div>
       <div class="row">
-        <input id="a-company" placeholder="Company" style="width:200px" list="company-list">
-        <input id="a-role" placeholder="Role" style="width:260px">
-        <input id="a-url" placeholder="Job posting URL" style="width:280px">
-        <select id="a-status"><option value="to_apply">to apply</option>
-          <option value="applied">applied</option><option value="online_test">online test</option>
-          <option value="interview">interview</option><option value="offer">offer</option>
-          <option value="rejected">rejected</option><option value="withdrawn">withdrawn</option></select>
-        <input id="a-date" type="date" style="width:150px">
-        <button class="act" onclick="addApp()">Add</button>
+        <select id="cv-firm" onchange="loadCvs()"></select>
+        <input id="cv-role" placeholder="Target role (e.g. Quantitative Researcher)" style="flex:1;min-width:220px">
+        <button class="act" onclick="proposeCv()">Propose a tailored CV</button>
+        <button class="ghost" onclick="openBaseCv()">Edit the base CV</button>
       </div>
-      <div class="scroll"><table id="atable"></table></div>
-      <div class="hint">Cold outreach and formal applications are different channels with different
-        conversion rates. Track them separately or you will draw the wrong conclusion about which
-        one works.</div>
+      <div id="cv-propose-result"></div>
     </div>
-  </section>
-
-  <!-- TEMPLATES -->
-  <section id="tab-templates" class="hide">
     <div class="card">
-      <h2>Email templates</h2>
+      <h2>Variants</h2>
+      <div class="scroll" style="max-height:260px"><table id="cv-table"></table></div>
+      <div class="hint">A variant must be <b>validated</b> before it can be attached to a queued
+        mail. That gate is why an unreviewed document can never go out with your name on it.</div>
+    </div>
+    <div class="card">
+      <h2 id="cv-edit-title">A variant</h2>
       <div class="row">
-        <select id="t-select" style="min-width:300px"></select>
-        <button class="ghost sm" onclick="loadTemplate()">Load</button>
-        <button class="ghost sm" onclick="newTemplate()">New</button>
-        <button class="ghost sm" onclick="api('POST','/api/seed/templates',{}).then(()=>loadTemplateList())">Restore defaults</button>
+        <input id="cv-name" placeholder="Name this variant" style="flex:1;min-width:240px">
+        <button class="ghost" onclick="saveCv()">Save</button>
+        <button class="act" onclick="reviewCv('validated')">Validate</button>
+        <button class="ghost" onclick="reviewCv('rejected')">Reject</button>
       </div>
-      <div class="row"><input id="t-name" placeholder="Template name" style="width:340px">
-        <select id="t-family"><option>quant</option><option>trading</option><option>structuring</option>
-          <option>sales</option><option>research</option><option>generic</option></select>
-        <button class="act" onclick="saveTemplate()">Save template</button></div>
-      <div class="row"><input id="t-subject" placeholder="Subject template" style="width:100%"></div>
-      <textarea id="t-body" rows="18"></textarea>
-      <div class="hint">Variables — contact: <code>{{first_name}}</code> <code>{{last_name}}</code> <code>{{job_title}}</code> <code>{{desk}}</code> <code>{{company}}</code> <code>{{city}}</code> <code>{{hook}}</code> · you: <code>{{my_full_name}}</code> <code>{{my_headline}}</code> <code>{{my_years_exp}}</code> <code>{{my_key_skills}}</code> <code>{{my_target_roles}}</code> <code>{{my_projects}}</code> <code>{{my_pitch}}</code> <code>{{my_phone}}</code> <code>{{my_linkedin}}</code></div>
+      <textarea id="cv-body" rows="20" placeholder="Select a variant above, or paste one here and press New."></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="ghost" onclick="newCv()">New from scratch</button>
+        <span class="muted" id="cv-saved"></span>
+      </div>
     </div>
   </section>
 

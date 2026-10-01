@@ -291,6 +291,114 @@ CREATE TABLE IF NOT EXISTS applications (
   updated_at  TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
+-- ---------------------------------------------------------------- MAIL QUEUE
+-- A mail the machine drafted, waiting for a human to decide. Nothing is ever sent
+-- from here. A row only becomes an `outreach` row when you validate it, and
+-- `sent` is set by the mailer that actually handed it to an SMTP server - never
+-- by the generator.
+--
+-- `generation` records HOW the draft was produced (llm:<model> | template:<id> |
+-- manual), so an analytics view can compare the machine's prose with your own
+-- templates instead of guessing from timestamps.
+CREATE TABLE IF NOT EXISTS mail_queue (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_id    INTEGER REFERENCES contacts(id) ON DELETE CASCADE,
+  company_id    INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+  -- pending  -> drafted, awaiting review. The only state a new row may sit in.
+  -- validated -> you approved the text. Not sent yet - see sent_at.
+  -- sent     -> handed to SMTP. sent_at and message_id are set.
+  -- cancelled -> you rejected it. Kept, never deleted: "why did I not write to
+  --              this person" is a question worth being able to answer later.
+  -- failed   -> approved but the SMTP call failed; the reason is in send_error.
+  -- Editing is not a state: a row being edited is still `pending`.
+  status        TEXT DEFAULT 'pending',
+  channel       TEXT DEFAULT 'email',      -- email now; linkedin later
+  to_addr       TEXT,                      -- resolved at draft time, editable
+  subject       TEXT,
+  body          TEXT,
+  -- Why this address: verified | pattern (a reconstruction) | none. Copied from
+  -- the contact at draft time and NOT re-derived, because the decision to send
+  -- must be made about the address the user actually saw in the queue.
+  addr_kind     TEXT DEFAULT 'none',
+  template_id   INTEGER REFERENCES templates(id) ON DELETE SET NULL,
+  cv_id         INTEGER REFERENCES cv_variants(id) ON DELETE SET NULL,
+  generation    TEXT,                      -- llm:gpt-4o | template:3 | manual
+  model         TEXT,
+  prompt_tokens INTEGER DEFAULT 0,
+  -- The machine's own score, kept so a bad batch can be spotted after the fact.
+  quality       TEXT,                      -- JSON from email_gen.score_email
+  -- Which facts the model said it used, as JSON. Stored so a draft stays
+  -- auditable: "why did it mention that" is answerable months later, and a claim
+  -- in a mail can be checked against the row it claims to come from.
+  specifics     TEXT,
+  -- Your words won over the machine's. Worth counting: the only honest measure
+  -- of how much the generator is actually helping.
+  edited        INTEGER DEFAULT 0,
+  reviewed_at   TEXT,
+  sent_at       TEXT,
+  message_id    TEXT,                      -- the SMTP Message-ID, for the thread
+  outreach_id   INTEGER REFERENCES outreach(id) ON DELETE SET NULL,
+  send_error    TEXT,
+  notes         TEXT,
+  created_at    TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at    TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------- CV VARIANTS
+-- Your CV, tailored. The base stays in `profile.cv_text` and is never overwritten
+-- by a variant: one master document, many adaptations, so a bad adaptation costs
+-- a click and not a rewrite. `parent_id` is the variant this one was derived
+-- from, which makes "revert to base" a lookup instead of a judgement.
+CREATE TABLE IF NOT EXISTS cv_variants (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  name         TEXT NOT NULL,              -- "Jane Street - quant research"
+  body         TEXT,
+  parent_id    INTEGER REFERENCES cv_variants(id) ON DELETE SET NULL,
+  -- Which contact/company this was written for. Loose on purpose: a variant is
+  -- often written for a ROLE at a firm, before any single person is known.
+  company_id   INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+  contact_id   INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
+  role_target  TEXT,
+  generation   TEXT,                       -- llm:<model> | manual
+  -- pending  -> proposed by the model, never reviewed
+  -- validated-> you accepted it; may now be attached to a queued mail
+  -- rejected -> you threw it away. Kept for the same reason cancelled mails are.
+  status       TEXT DEFAULT 'pending',
+  edited       INTEGER DEFAULT 0,
+  reviewed_at  TEXT,
+  notes        TEXT,
+  created_at   TEXT DEFAULT CURRENT_TIMESTAMP,
+  updated_at   TEXT DEFAULT CURRENT_TIMESTAMP
+);
+
+-- ---------------------------------------------------------------- TOUCHPOINTS
+-- Append-only. One row per real outbound contact, written the moment a mail is
+-- accepted by SMTP and never updated afterwards.
+--
+-- This is the memory of who has been approached, and it is deliberately separate
+-- from `outreach`: outreach is a workflow row you edit (status, follow-up date,
+-- reply snippet), while this is a ledger. Editing your notes on a thread must
+-- never be able to erase the fact that you wrote to someone - otherwise "who
+-- have I already contacted" silently starts returning people you already
+-- emailed, and the tool mails them twice. That failure is the whole reason this
+-- table exists rather than a query over outreach.
+CREATE TABLE IF NOT EXISTS contact_touchpoints (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact_id   INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+  company_id   INTEGER REFERENCES companies(id) ON DELETE SET NULL,
+  queue_id     INTEGER REFERENCES mail_queue(id) ON DELETE SET NULL,
+  outreach_id  INTEGER REFERENCES outreach(id) ON DELETE SET NULL,
+  channel      TEXT DEFAULT 'email',
+  direction    TEXT DEFAULT 'outbound',    -- outbound now; inbound later
+  to_addr      TEXT,
+  subject      TEXT,
+  -- verified | pattern | none: the SAME value the queue row carried, so the
+  -- ledger remembers how trustworthy the address was at the moment of sending.
+  addr_kind    TEXT DEFAULT 'none',
+  sent_at      TEXT DEFAULT CURRENT_TIMESTAMP,
+  message_id   TEXT
+);
+
 -- ---------------------------------------------------------------- FETCH LEDGER
 -- Every external API call is recorded here before its result is trusted. This
 -- is what stops a metered source (Hunter: 50 credits/month on the free tier)
@@ -331,3 +439,12 @@ CREATE INDEX IF NOT EXISTS idx_contacts_company    ON contacts(company_id);
 CREATE INDEX IF NOT EXISTS idx_outreach_contact    ON outreach(contact_id);
 CREATE INDEX IF NOT EXISTS idx_outreach_status     ON outreach(status);
 CREATE INDEX IF NOT EXISTS idx_companies_type      ON companies(type);
+
+-- The queue is read by status ("what is waiting on me") far more often than by
+-- anything else, and the touchpoint ledger is only ever asked "has this person
+-- been contacted, and when".
+CREATE INDEX IF NOT EXISTS idx_queue_status        ON mail_queue(status);
+CREATE INDEX IF NOT EXISTS idx_queue_contact       ON mail_queue(contact_id);
+CREATE INDEX IF NOT EXISTS idx_cv_status           ON cv_variants(status);
+CREATE INDEX IF NOT EXISTS idx_touch_contact       ON contact_touchpoints(contact_id);
+CREATE INDEX IF NOT EXISTS idx_touch_sent_at       ON contact_touchpoints(sent_at);

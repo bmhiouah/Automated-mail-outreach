@@ -14,15 +14,14 @@ const esc = (s)=>String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&l
 document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#nav button').forEach(x=>x.classList.remove('on'));
   b.classList.add('on');
-  ['dash','companies','sourcing','contacts','compose','outreach','apps','templates','profile'].forEach(t=>
-    $('#tab-'+t).classList.toggle('hide', t!==b.dataset.tab));
+  ['dash','queue','companies','sourcing','contacts','cvs','outreach','profile']
+    .forEach(t=>$('#tab-'+t).classList.toggle('hide', t!==b.dataset.tab));
+  if(b.dataset.tab==='queue') loadQueueTab();
   if(b.dataset.tab==='companies') loadCompanies();
   if(b.dataset.tab==='sourcing') loadSourcing();
   if(b.dataset.tab==='contacts') loadContacts();
-  if(b.dataset.tab==='compose') loadPickers();
+  if(b.dataset.tab==='cvs') loadCvsTab();
   if(b.dataset.tab==='outreach') loadOutreach();
-  if(b.dataset.tab==='apps') loadApps();
-  if(b.dataset.tab==='templates') loadTemplateList();
   if(b.dataset.tab==='profile') loadProfile();
 });
 
@@ -72,7 +71,7 @@ async function loadDash(){
       <td>${esc(o.first_name)} ${esc(o.last_name)}</td>
       <td class="muted">${esc(o.company_name||'')}</td>
       <td><span class="tag warn">${esc(o.next_followup_at)}</span></td>
-      <td><button class="act sm" onclick="draftFollowup(${o.id})">Draft follow-up</button>
+      <td><button class="act sm" onclick="queueFollowup(${o.id})">Draft follow-up</button>
           <button class="ghost sm" onclick="viewMail(${o.id})">View</button></td></tr>`).join('')+'</table>'
     : '<span class="muted">Nothing due. Go find more contacts.</span>';
 }
@@ -161,31 +160,6 @@ async function findPeople(id){
   if(r.error){ alert(r.error); return; }
   window.open(r.xray_url,'_blank');
   window.open(r.careers_url,'_blank');
-}
-async function loadApps(){
-  const rows = await api('GET','/api/applications');
-  const statuses='to_apply,applied,online_test,interview,offer,rejected,withdrawn'
-    .split(',').map(t=>`<option value="${t}">${t.replace('_',' ')}</option>`).join('');
-  $('#atable').innerHTML = `<thead><tr><th style="width:200px">Company</th><th>Role</th>
-    <th style="width:130px">Status</th><th style="width:140px">Applied</th><th></th></tr></thead><tbody>`+
-    rows.map(r=>`<tr>
-      <td><input class="cell" value="${esc(r.company_name||'')}" data-id="${r.id}" data-f="company_name"></td>
-      <td><input class="cell" value="${esc(r.role||'')}" data-id="${r.id}" data-f="role"></td>
-      <td><select class="cell" data-id="${r.id}" data-f="status">${statuses.replace(`value="${r.status||''}"`,`value="${r.status||''}" selected`)}}</select></td>
-      <td><input class="cell" type="date" value="${esc((r.applied_at||'').slice(0,10))}" data-id="${r.id}" data-f="applied_at"></td>
-      <td><button class="ghost sm" onclick="del('applications',${r.id},loadApps)">×</button></td></tr>`).join('')+'</tbody>';
-  bindCells('#atable','applications', loadApps);
-}
-async function addApp(){
-  const b={company_name:$('#a-company').value, role:$('#a-role').value, url:$('#a-url').value,
-    status:$('#a-status').value, applied_at:$('#a-date').value};
-  if(!b.company_name && !b.role) return;
-  const co = await api('GET','/api/companies?q='+encodeURIComponent(b.company_name||''));
-  const hit = co.find(c=>c.name.toLowerCase()===(b.company_name||'').toLowerCase());
-  if(hit) b.company_id = hit.id;
-  await api('POST','/api/applications',b);
-  ['#a-company','#a-role','#a-url'].forEach(x=>$(x).value='');
-  loadApps();
 }
 async function retag(){
   const r = await api('POST','/api/retag',{overwrite:false});
@@ -293,7 +267,7 @@ async function loadContacts(){
       <td><input class="cell" value="${esc(r.email||'')}" placeholder="${esc(r.email_masked||r.email_guess||'')}" data-id="${r.id}" data-f="email">
           ${emailBadge(r)}</td>
       <td><span class="tag gray">${esc(r.source||'')}</span></td>
-      <td><button class="ghost sm" onclick="toCompose(${r.id})">Mail</button>
+      <td><button class="ghost sm" onclick="writeToContact(${r.id})">Write</button>
           <button class="ghost sm" onclick="del('contacts',${r.id},loadContacts)">×</button></td></tr>`).join('')+'</tbody>';
   bindCells('#ktable','contacts', loadContacts);
 }
@@ -392,132 +366,441 @@ async function savePeople(){
   loadContacts(); loadDash();
 }
 
-/* ---------- compose ---------- */
-let currentOutreachId = null;   // the row being edited, once saved
-let currentFollows = null;      // set when this draft is a follow-up to another mail
-async function loadPickers(){
-  const [cs, ts] = await Promise.all([api('GET','/api/contacts'), api('GET','/api/templates')]);
-  $('#pick-contact').innerHTML = cs.map(c=>
-    `<option value="${c.id}">${esc(c.first_name)} ${esc(c.last_name)} — ${esc(c.company_name||'')}</option>`).join('');
-  $('#pick-template').innerHTML = ts.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  if(!cs.length) $('#pick-contact').innerHTML='<option value="">no contacts yet — add some first</option>';
-}
-async function generate(){
-  const r = await api('POST','/api/generate',
-    {contact_id:$('#pick-contact').value, template_id:$('#pick-template').value});
-  if(r.error){ $('#flags').innerHTML = `<div class="flag">${esc(r.error)}</div>`; return; }
-  $('#m-to').value = r.to; $('#m-subject').value = r.subject; $('#m-body').value = r.body;
-  currentOutreachId = null; currentFollows = null;   // a fresh mail is never a follow-up
-  $('#flags').innerHTML = (r.flags||[]).length
-    ? r.flags.map(f=>`<div class="flag">${esc(f)}</div>`).join('') : '';
-  renderBrief(r);
-  renderScore(r.quality);
-}
-function renderBrief(r){
-  const el = $('#brief');
-  if(!r.brief){ el.innerHTML = r.company
-    ? `<div class="flag" style="background:#f1efe8;color:#5f5e5a">No brief for <b>${esc(r.company)}</b> yet — write the hook yourself, or ask me to research the firm.</div>`
-    : ''; return; }
-  const hook = esc(r.brief_hook);
-  el.innerHTML = `<div class="flag" style="background:var(--accent-soft);color:var(--accent);line-height:1.55">
-    <b>Firm intel — ${esc(r.company)}</b><br>
-    <span style="color:var(--text)">${esc(r.brief).replace(/\s*Best hook:.*$/i,'')}</span>
-    ${hook?`<br><b>Best hook:</b> <span style="color:var(--text)">${hook}</span>`:''}
-    <div style="margin-top:6px;font-size:11.5px">
-      <a href="#" id="copy-hook">copy hook</a>
-      &nbsp;·&nbsp; or use <code>{{company_hook}}</code> / <code>{{company_research}}</code> in a template
-    </div></div>`;
-  const link = $('#copy-hook');
-  if(link) link.onclick = e => {
-    e.preventDefault();
-    navigator.clipboard.writeText(r.brief_hook||'');
-    link.textContent = 'copied';
-  };
-}
-function renderScore(q){
-  if(!q){ $('#score').innerHTML=''; return; }
-  const cls = q.grade==='A' ? 'good' : (q.grade==='B' ? 'warn' : 'bad');
-  $('#score').innerHTML = `<div class="flag" style="background:var(--${cls}-soft);color:var(--${cls})">
-    Grade ${q.grade} · ${q.score}/100 · ${q.words} words
-    ${q.issues.length ? '<br>' + q.issues.map(i=>'· '+esc(i)).join('<br>')
-                      : '<br>' + esc(q.notes.join(' '))}</div>`;
-}
-async function checkQuality(){
-  const r = await api('POST','/api/score',{contact_id:$('#pick-contact').value,
-    subject:$('#m-subject').value, body:$('#m-body').value});
-  renderScore(r);
-}
-async function saveDraft(){
-  const r = await api('POST','/api/outreach',{contact_id:$('#pick-contact').value,
-    template_id:$('#pick-template').value, subject:$('#m-subject').value, body:$('#m-body').value,
-    status:'draft'});
-  currentOutreachId = r.id;
-  $('#flags').innerHTML = r.error?`<div class="flag">${esc(r.error)}</div>`:
-    '<div class="flag" style="background:var(--good-soft);color:var(--good)">Draft saved.</div>';
-}
-async function markSent(){
-  if(!currentOutreachId){ await saveDraft(); }
-  await api('POST','/api/mark-sent',
-    {id:currentOutreachId, followup_days:7, follows:currentFollows});
-  $('#flags').innerHTML = '<div class="flag" style="background:var(--good-soft);color:var(--good)">'
-    + (currentFollows ? 'Follow-up sent. The original thread is no longer due.'
-                      : 'Marked sent. Follow-up set for +7 days.') + '</div>';
-  currentFollows = null;
-  loadDash();
+/* ---------- the review queue ---------- */
+let qCurrent = null;
+
+async function loadQueueTab(){
+  await Promise.all([loadQueueStatus(), loadQueue(), loadTodo(), loadCvPickers(),
+                      loadModels()]);
+  loadHistory();
+  await showNextDraft();          // land straight on something to decide
 }
 
-/* ---------- getting the mail out ---------- */
-function copyField(sel, btn){
-  const el = $(sel);
-  if(!el) return;
-  navigator.clipboard.writeText(el.value||'').then(()=>{
-    const old = btn.textContent; btn.textContent = 'copied';
-    setTimeout(()=>{ btn.textContent = old; }, 1200);
-  });
+/* ---------- connection + counters ---------- */
+async function loadQueueStatus(){
+  const s = await api('GET','/api/queue/status');
+  const m = s.llm || {}, mail = s.mail || {};
+  const bits = [];
+  bits.push(m.configured
+    ? `<span class="tag good">model: ${esc(m.model)}</span>
+       <span class="tag gray">${m.calls} calls · ${m.cached_hits} cached</span>`
+    : `<span class="tag warn">no model</span><span class="muted"> ${esc(m.reason||'')}</span>`);
+  if(mail.send_mode==='live'){
+    bits.push(mail.configured
+      ? `<span class="tag good">sending: ${esc(mail.from||mail.smtp_user)}</span>
+         <span class="tag gray">${mail.sent_today}/${mail.daily_cap} today</span>`
+      : `<span class="tag bad">live, but no SMTP credentials</span>`);
+  } else {
+    bits.push(`<span class="tag warn">dry mode</span>
+      <span class="muted"> nothing is transmitted — set <code>mail.send_mode = "live"</code>
+      in config.json when you are ready</span>`);
+  }
+  $('#q-status').innerHTML = '<div class="row">'+bits.join('')+'</div>';
 }
-function copyAll(btn){
-  const txt = `Subject: ${$('#m-subject').value}\n\n${$('#m-body').value}`;
-  navigator.clipboard.writeText(txt).then(()=>{
-    const old = btn.textContent; btn.textContent = 'copied';
-    setTimeout(()=>{ btn.textContent = old; }, 1200);
-  });
+
+function qBadgeClass(s){
+  return s==='sent' ? 'good' : s==='cancelled' ? 'gray'
+       : s==='failed' ? 'bad' : s==='pending' ? 'warn' : 'good';
 }
-function openInMail(){
-  const to = ($('#m-to').value||'').trim();
-  const subject = $('#m-subject').value||'';
-  const body = $('#m-body').value||'';
-  if(!body.trim()){ alert('Generate or write something first.'); return; }
-  // mailto has practical length limits; past ~1800 chars clients silently drop
-  // the body, so warn rather than let you send a half-empty email.
-  const url = 'mailto:'+encodeURIComponent(to)+'?subject='+encodeURIComponent(subject)
-            + '&body='+encodeURIComponent(body);
-  if(url.length > 1900){
-    $('#mailto-hint').innerHTML = '<b>This mail is too long for a mailto link</b> — your client would '
-      + 'truncate it. Use "Copy both" and paste instead.';
+
+function addrKindTag(kind){
+  if(kind==='verified') return '<span class="tag good">verified</span>';
+  if(kind==='pattern')  return `<span class="tag warn" title="reconstructed from the firm's convention, not checked">guessed</span>`;
+  return '<span class="tag bad">none</span>';
+}
+
+function flag(text, kind){
+  const bg = {bad:'var(--bad-soft)', warn:'var(--warn-soft)', good:'var(--good-soft)',
+              gray:'#f1efe8'}[kind] || 'var(--warn-soft)';
+  return `<div class="flag" style="background:${bg}">${esc(text)}</div>`;
+}
+
+// For messages that need real markup. Interpolated values inside still go
+// through esc() by hand.
+function flagHtml(html, kind){
+  const bg = {bad:'var(--bad-soft)', warn:'var(--warn-soft)', good:'var(--good-soft)',
+              gray:'#f1efe8'}[kind] || 'var(--warn-soft)';
+  return `<div class="flag" style="background:${bg}">${html}</div>`;
+}
+
+/* ---------- the list below: a way back to something you skipped ---------- */
+async function loadQueue(){
+  const f = $('#q-filter').value;
+  const rows = await api('GET','/api/queue'+(f?('?status='+f):''));
+  const counts = await api('GET','/api/queue/counts');
+  $('#q-count').textContent = rows.length+' shown';
+  $('#q-badge').innerHTML = ['pending','validated','sent','cancelled','failed']
+    .filter(s=>counts[s]).map(s=>`<span class="tag ${qBadgeClass(s)}">${s} ${counts[s]}</span>`).join(' ');
+  $('#q-table').innerHTML =
+    `<thead><tr><th style="width:32px"></th><th>to</th><th>subject</th>
+      <th style="width:110px">status</th><th style="width:92px">address</th>
+      <th style="width:64px">grade</th></tr></thead><tbody>`+
+    rows.map(r=>{
+      let q={}; try{ q=JSON.parse(r.quality||'{}'); }catch(e){}
+      const who = [r.first_name,r.last_name].filter(Boolean).join(' ');
+      const isCurrent = qCurrent && r.id===qCurrent.id;
+      return `<tr onclick="openQueueRow(${r.id})"
+        style="${isCurrent?'background:var(--accent-soft)':''}">
+        <td>${r.edited?'<span class="muted" title="you edited this">&#9998;</span>':''}</td>
+        <td><b>${esc(who)}</b><br><span class="muted">${esc(r.company_name||r.firm||'')}</span></td>
+        <td>${esc(r.subject||'')}</td>
+        <td><span class="tag ${qBadgeClass(r.status)}">${esc(r.status)}</span></td>
+        <td>${addrKindTag(r.addr_kind)}</td>
+        <td>${q.grade?`<span class="tag ${q.grade==='A'?'good':(q.grade==='B'?'warn':'bad')}">${esc(q.grade)}</span>`:''}</td>
+      </tr>`;
+    }).join('')+'</tbody>';
+}
+
+/* ---------- the review cursor ---------- */
+async function showNextDraft(){
+  const pending = await api('GET','/api/queue?status=pending');
+  $('#q-progress').textContent = pending.length ? `${pending.length} left` : 'queue empty';
+  if(!pending.length){
+    qCurrent = null;
+    $('#q-id').value = '';
+    $('#q-who').textContent = 'Nothing waiting. Tick someone on the left to draft.';
+    ['#q-to','#q-subject','#q-body','#q-kind'].forEach(s=>$(s).value='');
+    $('#q-flags').innerHTML = '';
+    $('#q-result').innerHTML = flag('You are through the queue.', 'good');
+    loadQueue();
     return;
   }
-  window.location.href = url;
-}
-async function draftFollowup(outreachId){
-  const r = await api('POST','/api/draft-followup',{outreach_id:outreachId});
-  if(r.error){ alert(r.error); return; }
-  document.querySelector('#nav button[data-tab="compose"]').click();
-  await loadPickers();
-  $('#pick-contact').value = r.contact_id;
-  $('#pick-template').value = r.template_id;
-  currentOutreachId = null; currentFollows = r.follows;
-  $('#m-to').value = r.to; $('#m-subject').value = r.subject; $('#m-body').value = r.body;
-  renderBrief(r); renderScore(r.quality);
-  $('#flags').innerHTML = `<div class="flag" style="background:var(--warn-soft);color:var(--warn)">
-    This is a follow-up to "${esc((r.original_subject||r.subject).replace(/^Re: /,''))}" — keeping the same
-    subject so it threads. Sending it will clear the original from your due list.</div>`;
-}
-function toCompose(id){
-  document.querySelector('#nav button[data-tab="compose"]').click();
-  loadPickers().then(()=>{ $('#pick-contact').value=id; generate(); });
+  await openQueueRow(pending[0].id);
 }
 
-/* ---------- outreach ---------- */
+async function openQueueRow(id){
+  const q = await api('POST','/api/queue/get',{id});
+  if(q.error){ $('#q-result').innerHTML = flag(q.error,'bad'); return; }
+  qCurrent = q;
+  $('#q-id').value = q.id;
+  $('#q-who').innerHTML = `<b>${esc((q.contact.first_name||'')+' '+(q.contact.last_name||''))}</b>
+    &mdash; ${esc(q.company.name||q.contact.company_name||'')}
+    ${q.contact.job_title?`<span class="muted">(${esc(q.contact.job_title)})</span>`:''}`;
+  $('#q-to').value = q.to_addr||'';
+  $('#q-kind').value = q.addr_kind||'none';
+  $('#q-subject').value = q.subject||'';
+  $('#q-body').value = q.body||'';
+  $('#q-cvrow').style.display = 'flex';
+  $('#q-cv').value = q.cv_id||'';
+
+  // The two things standing between this draft and a real person, both shown
+  // before the button rather than after a refusal.
+  let h = '';
+  if(q.specifics && q.specifics.length){
+    h += `<div class="flag" style="background:var(--good-soft);color:var(--good)">
+      <b>What this draft is built on</b><br>`
+      + q.specifics.map(s=>'&bull; '+esc(s)).join('<br>')
+      + `<br><span style="font-size:11.5px">Check these against the database before
+         you send &mdash; a claim that is not in the data is one you cannot defend.</span></div>`;
+  } else if((q.generation||'').startsWith('llm:')){
+    h += flag('This draft names nothing specific to the person or the firm. A mail '
+      +'that could go to anyone is a mail that gets deleted.','warn');
+  }
+  if(q.cv) h += `<div class="flag" style="background:var(--accent-soft);color:var(--accent)">
+    CV attached: <b>${esc(q.cv.name)}</b>${q.cv.status!=='validated'?' (not validated)':''}</div>`;
+  (q.flags||[]).forEach(f=>h+=flag(f,'warn'));
+  if(q.quality && q.quality.issues) q.quality.issues.forEach(i=>h+=flag(i,'warn'));
+  if(q.blocking && q.blocking.length) q.blocking.forEach(b=>h+=flag(b,'bad'));
+  if(q.send_error) h += flag(q.send_error,'bad');
+  $('#q-flags').innerHTML = h;
+  $('#q-result').innerHTML = '';
+  const readOnly = q.status!=='pending';
+  ['#q-to','#q-subject','#q-body','#q-kind'].forEach(s=>$(s).disabled = readOnly);
+  if(readOnly){
+    $('#q-result').innerHTML = flag('This draft is '+q.status+' and can no longer be edited.','gray');
+  }
+  loadQueue();
+}
+
+async function saveQueueRow(){
+  const id = $('#q-id').value;
+  if(!id) return;
+  const r = await api('POST','/api/queue/edit',{id,
+    to_addr:$('#q-to').value, subject:$('#q-subject').value, body:$('#q-body').value,
+    addr_kind:$('#q-kind').value, cv_id:$('#q-cv').value||null});
+  $('#q-result').innerHTML = r.error ? flag(r.error,'bad')
+                                    : flag('Edits saved. Nothing has been sent.','good');
+  loadQueue();
+}
+
+async function validateQueueRow(){
+  const id = $('#q-id').value;
+  if(!id){ $('#q-result').innerHTML = flag('Nothing to send.','warn'); return; }
+  const to = $('#q-to').value.trim();
+  const kind = $('#q-kind').value;
+  if(kind==='pattern'){
+    if(!confirm("This address was RECONSTRUCTED from the firm's email convention, not "
+      +'verified against a real person.\n\n'+to+'\n\nSending to a wrong address is a bounce '
+      +'at best. Send anyway?')) return;
+  } else if(!confirm('Send this mail to '+to+' now?')) return;
+
+  const r = await api('POST','/api/queue/validate',{id,
+    to_addr:$('#q-to').value, subject:$('#q-subject').value, body:$('#q-body').value,
+    addr_kind:kind, cv_id:$('#q-cv').value||null, confirm_pattern:kind==='pattern'});
+  if(r.error){
+    $('#q-result').innerHTML = flag(r.error,'bad')+(r.note?flag(r.note,'warn'):'');
+    return;                                   // stay put: nothing was decided
+  }
+  loadHistory(); loadTodo();
+  await showNextDraft();                      // the whole point: move on
+  const said = r.sent ? 'Sent. '+r.note : (r.note||r.error);
+  $('#q-result').innerHTML = flag(said, r.sent?'good':'warn');
+  loadQueueStatus();
+}
+
+async function cancelQueueRow(){
+  const id = $('#q-id').value;
+  if(!id) return;
+  if(!confirm('Cancel this draft? It is kept for the record, nothing is sent, and they '
+    +'stay in your "not contacted" list.')) return;
+  const r = await api('POST','/api/queue/cancel',{id});
+  if(r.error){ $('#q-result').innerHTML = flag(r.error,'bad'); return; }
+  loadTodo();
+  await showNextDraft();
+  $('#q-result').innerHTML = flag('Cancelled. They are still in your "not contacted" list.','gray');
+}
+
+// Skip without deciding anything: moves the cursor, leaves the draft pending.
+// This is what makes the list below a safety net rather than a dead end.
+async function skipQueueRow(){
+  const pending = await api('GET','/api/queue?status=pending');
+  if(pending.length < 2){ $('#q-result').innerHTML = flag('That was the last one.','gray'); return; }
+  const i = pending.findIndex(r=>qCurrent && r.id===qCurrent.id);
+  const next = pending[(i + 1) % pending.length];
+  await openQueueRow(next.id);
+  $('#q-result').innerHTML = flag('Skipped — still waiting on you.','gray');
+}
+
+function copyQueue(btn){
+  const txt = `To: ${$('#q-to').value}\nSubject: ${$('#q-subject').value}\n\n${$('#q-body').value}`;
+  navigator.clipboard.writeText(txt).then(()=>{
+    const old = btn.textContent; btn.textContent='copied';
+    setTimeout(()=>{ btn.textContent=old; }, 1200);
+  });
+}
+
+function openQueueInMail(){
+  const url = 'mailto:'+encodeURIComponent(($('#q-to').value||'').trim())
+    + '?subject='+encodeURIComponent($('#q-subject').value||'')
+    + '&body='+encodeURIComponent($('#q-body').value||'');
+  if(url.length > 1900){ alert('Too long for a mailto link — use Copy instead.'); return; }
+  window.location.href = url;
+}
+
+/* ---------- who is left to contact ---------- */
+function todoQuery(){
+  const p = new URLSearchParams();
+  if($('#q-f-city').value.trim()) p.set('city', $('#q-f-city').value.trim());
+  if($('#q-f-type').value) p.set('type', $('#q-f-type').value);
+  if($('#q-f-desk').value) p.set('desk', $('#q-f-desk').value);
+  if($('#q-f-tier').value) p.set('tier', $('#q-f-tier').value);
+  if($('#q-f-search').value.trim()) p.set('search', $('#q-f-search').value.trim());
+  if($('#q-f-pending').checked) p.set('no_pending', '1');
+  p.set('limit','300');
+  return p.toString();
+}
+
+const TYPE_LABELS = {bank:'Banks', hedge_fund:'Hedge funds', prop_hft:'Prop & HFT',
+  asset_manager:'Asset managers', commodity:'Commodities', insurance_am:'Insurance AM',
+  broker:'Brokers', crypto:'Crypto', other:'Other'};
+
+async function loadTodo(){
+  const t = await api('GET','/api/todo?'+todoQuery());
+  // Facets only rebuilt when the filter is empty, so choosing "Paris" does not
+  // throw away the city list you are choosing from.
+  if(!$('#q-f-city').value.trim() && !$('#q-f-type').value){
+    $('#q-cities').innerHTML = (t.cities||[]).map(c=>`<option value="${esc(c)}">`).join('');
+    if(!$('#q-f-type').dataset.filled){
+      $('#q-f-type').innerHTML = '<option value="">Any firm type</option>'
+        + (t.types||[]).map(x=>`<option value="${esc(x)}">${esc(TYPE_LABELS[x]||x)}</option>`).join('');
+      $('#q-f-type').dataset.filled = '1';
+    }
+    if(!$('#q-f-desk').dataset.filled){
+      $('#q-f-desk').innerHTML = '<option value="">Any desk</option>'
+        + (t.desks||[]).map(x=>`<option value="${esc(x)}">${esc(x)}</option>`).join('');
+      $('#q-f-desk').dataset.filled = '1';
+    }
+  }
+  $('#q-todo-count').textContent = t.n_remaining+' to go · '
+    + t.n_contacted+' contacted · '+t.n_pending+' in the queue';
+  $('#q-todo').innerHTML =
+    `<thead><tr><th style="width:32px"></th><th>person</th><th>firm</th>
+      <th style="width:88px">city</th><th style="width:92px">address</th></tr></thead><tbody>`+
+    t.remaining.map(r=>`<tr>
+      <td><input type="checkbox" class="q-pick" value="${r.id}" ${r.email?'':'disabled'}></td>
+      <td>${esc(r.first_name+' '+r.last_name)}</td>
+      <td>${esc(r.firm||r.company_name||'')}</td>
+      <td class="muted">${esc(r.city||'')}</td>
+      <td>${r.email?emailBadge(r):'<span class="tag gray">none</span>'}</td>
+    </tr>`).join('')+'</tbody>';
+}
+
+/* ---------- which model writes the draft ---------- */
+// Populated once from the endpoint's own /models list, minus the ones measured
+// to reject /chat/completions on this gateway. Cached because it is a network
+// call the user should not pay for on every tab switch.
+let modelCache = null;
+async function loadModels(force){
+  if(modelCache && !force) return modelCache;
+  const m = await api('GET','/api/llm/models');
+  modelCache = m;
+  const opts = (m.models||[]).map(x =>
+    `<option value="${esc(x)}"${x===m.current?' selected':''}>${esc(x)}</option>`).join('');
+  $('#q-model').innerHTML = opts || '<option value="">no models available</option>';
+  $('#q-model').title = (m.models||[]).length + ' models this endpoint serves'
+    + ((m.untested||[]).length ? '; ' + m.untested.length + ' not offered (unverified here)' : '');
+  return m;
+}
+
+async function draftSelected(btn){
+  const ids = [...document.querySelectorAll('.q-pick:checked')].map(i=>i.value);
+  const out = $('#q-gen-result');
+  if(!ids.length){ out.innerHTML = flag('Tick someone in the list above first.','warn'); return; }
+  // Checked up front rather than after 20 failed calls: without a key every
+  // single request comes back an error, and the first one tells the whole story.
+  const st = await api('GET','/api/queue/status');
+  if(!st.llm || !st.llm.configured){
+    out.innerHTML = flagHtml('<b>No model configured, so nothing was drafted.</b><br>'
+      + esc(st.llm.reason||'')
+      + '<br><br>Add this to <code>config.json</code> and restart:<br>'
+      + '<code>"llm": {"api_key": "sk-...", "base_url": "https://api.openai.com/v1", '
+      + '"model": "gpt-4o-mini"}</code>','bad');
+    return;
+  }
+  const cv = $('#q-draft-cv').value||null;
+  const note = $('#q-gen-note').value||'';
+  const model = $('#q-model').value||'';
+  btn.disabled = true;
+  let made = 0, failed = 0, last = '';
+  for(const id of ids){
+    const r = await api('POST','/api/queue/draft',
+      {contact_id:+id, cv_id:cv, note, model});
+    if(r.error){ failed++; last = r.error; } else made++;
+    out.innerHTML = flag('Drafting… '+made+' done, '+failed+' failed'
+      + (failed?' — '+last:''),'gray');
+  }
+  btn.disabled = false;
+  out.innerHTML = flagHtml(failed
+    ? (made+' drafted, '+failed+' failed<br>'+esc(last))
+    : (made+' drafted — the first one is on the right'), failed?'warn':'good');
+  loadQueue(); loadQueueStatus(); loadTodo();
+  await showNextDraft();
+}
+
+async function loadHistory(){
+  const rows = await api('GET','/api/history?limit=200');
+  $('#h-count').textContent = rows.length+' recorded';
+  $('#q-history').innerHTML =
+    `<thead><tr><th style="width:140px">when</th><th>person</th><th>firm</th>
+      <th>address</th><th style="width:88px">trust</th><th>subject</th></tr></thead><tbody>`+
+    rows.map(t=>`<tr>
+      <td class="muted">${esc((t.sent_at||'').replace('T',' ').slice(0,16))}</td>
+      <td>${esc(((t.first_name||'')+' '+(t.last_name||'')).trim()||'—')}</td>
+      <td>${esc(t.firm||t.company_name||'')}</td>
+      <td>${esc(t.to_addr||'')}</td>
+      <td>${addrKindTag(t.addr_kind)}</td>
+      <td>${esc((t.subject||'').slice(0,60))}</td>
+    </tr>`).join('')+'</tbody>';
+}
+
+/* ---------- CV variants ---------- */
+let currentCvId = null;
+
+async function loadCvPickers(){
+  const cvs = await api('GET','/api/cvs');
+  // Only validated variants appear here: this is the picker that decides what
+  // gets attached to a real mail, so the status filter is the gate, not a nicety.
+  const ok = cvs.variants.filter(v=>v.status==='validated');
+  const opt = '<option value="">Base CV (no attachment)</option>'
+    + ok.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
+  $('#q-cv').innerHTML = opt;
+  $('#q-draft-cv').innerHTML = opt;
+}
+
+async function loadCvsTab(){
+  const firms = await api('GET','/api/companies');
+  const keep = $('#cv-firm').value;
+  $('#cv-firm').innerHTML = '<option value="">Pick a firm…</option>'
+    + firms.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  $('#cv-firm').value = keep;
+  loadCvs();
+}
+
+async function loadCvs(){
+  const r = await api('GET','/api/cvs');
+  $('#cv-base-info').textContent = r.base_present
+    ? r.base_bytes+' characters, stored in My profile'
+    : 'none yet — paste one in My profile first';
+  $('#cv-table').innerHTML =
+    `<thead><tr><th>name</th><th>written for</th><th style="width:96px">status</th>
+      <th style="width:64px">size</th><th style="width:120px">made by</th></tr></thead><tbody>`+
+    r.variants.map(v=>`<tr onclick="openCv(${v.id})"
+      style="${v.id===currentCvId?'background:var(--accent-soft)':''}">
+      <td><b>${esc(v.name)}</b>${v.used_by?`<span class="muted"> · used ${v.used_by}x</span>`:''}</td>
+      <td>${esc(v.firm||'')} ${v.role_target?`<span class="muted">${esc(v.role_target)}</span>`:''}</td>
+      <td><span class="tag ${v.status==='validated'?'good':(v.status==='rejected'?'gray':'warn')}">${esc(v.status)}</span></td>
+      <td class="muted">${v.bytes||0}</td>
+      <td class="muted">${esc(v.generation||'manual')}</td>
+    </tr>`).join('')+'</tbody>';
+}
+
+async function openCv(id){
+  currentCvId = id;
+  const v = await api('POST','/api/cvs/get',{id});
+  if(v.error) return;
+  $('#cv-name').value = v.name||'';
+  $('#cv-body').value = v.body||'';
+  $('#cv-edit-title').innerHTML = 'Editing: <span class="muted">'+esc(v.name)+'</span>';
+  $('#cv-saved').textContent = '';
+  loadCvs();
+}
+
+async function proposeCv(){
+  const firm = $('#cv-firm').value;
+  $('#cv-propose-result').innerHTML = flag('Asking the model...','gray');
+  const r = await api('POST','/api/cvs/propose',
+    {company_id:firm?+firm:null, role_target:$('#cv-role').value||''});
+  if(r.error){ $('#cv-propose-result').innerHTML = flag(r.error,'bad'); return; }
+  $('#cv-propose-result').innerHTML = flag('Proposed: '+r.variant.name
+    +'. It is NOT approved - read it, edit it, then Validate.', 'warn');
+  currentCvId = r.variant.id;
+  $('#cv-name').value = r.variant.name;
+  $('#cv-body').value = r.variant.body;
+  $('#cv-edit-title').innerHTML = 'Reviewing: <span class="muted">'
+    +esc(r.variant.name)+'</span>';
+  loadCvs();
+}
+
+async function saveCv(){
+  if(!currentCvId){ newCv(); return; }
+  const r = await api('POST','/api/cvs/save',
+    {id:currentCvId, name:$('#cv-name').value, body:$('#cv-body').value});
+  $('#cv-saved').textContent = r.error ? r.error : 'saved';
+  loadCvs(); loadCvPickers();
+}
+
+async function newCv(){
+  const r = await api('POST','/api/cvs/create', {name:$('#cv-name').value||'untitled',
+    body:$('#cv-body').value, company_id:$('#cv-firm').value||null});
+  if(r.error){ $('#cv-saved').textContent = r.error; return; }
+  currentCvId = r.id;
+  $('#cv-saved').textContent = 'created';
+  loadCvs(); loadCvPickers();
+}
+
+async function reviewCv(decision){
+  if(!currentCvId){ $('#cv-saved').textContent = 'pick a variant first'; return; }
+  if(decision==='validated' && !confirm('Validate this CV? A validated variant can be attached '
+    +'to a queued mail. The base CV is never changed either way.')) return;
+  const r = await api('POST','/api/cvs/review',{id:currentCvId, decision});
+  $('#cv-saved').textContent = r.error ? r.error : decision;
+  loadCvs(); loadCvPickers();
+}
+
+function openBaseCv(){
+  document.querySelector('#nav button[data-tab="profile"]').click();
+  setTimeout(()=>{ const t=$('#p-cv'); if(t) t.scrollIntoView({behavior:'smooth'}); }, 60);
+}
 async function loadOutreach(){
   const p = new URLSearchParams();
   if($('#ostatus').value) p.set('status',$('#ostatus').value);
@@ -538,44 +821,43 @@ async function loadOutreach(){
       <td><input class="cell" type="date" value="${esc((r.next_followup_at||'').slice(0,10))}" data-id="${r.id}" data-f="next_followup_at"></td>
       <td><input class="cell" value="${esc(r.followup_stage)}" data-id="${r.id}" data-f="followup_stage" style="width:50px"></td>
       <td><button class="ghost sm" onclick="viewMail(${r.id})">View</button>
-          ${(r.status==='sent')?`<button class="ghost sm" onclick="draftFollowup(${r.id})">Follow up</button>`:''}
+          ${(r.status==='sent')?`<button class="ghost sm" onclick="queueFollowup(${r.id})">Follow up</button>`:''}
           <button class="ghost sm" onclick="del('outreach',${r.id},loadOutreach)">×</button></td></tr>`).join('')+'</tbody>';
   bindCells('#otable','outreach', loadOutreach);
 }
 async function viewMail(id){
   const rows = await api('GET','/api/outreach');
   const r = rows.find(x=>x.id===id);
-  document.querySelector('#nav button[data-tab="compose"]').click();
-  setTimeout(()=>{ currentOutreachId=id; $('#m-subject').value=r.subject||''; $('#m-body').value=r.body||'';
-    $('#m-to').value=r.contact_email||''; $('#flags').innerHTML=''; },50);
+  if(!r) return;
+  // Sent mail is read-only by design: the text is the record of what the person
+  // actually received, and an editor that could change it would quietly rewrite
+  // history. The buttons below are the only actions offered on it.
+  alert((r.first_name||'')+' '+(r.last_name||'')+'  —  '+(r.company_name||'')+'\n\n'
+    +'To: '+(r.contact_email||'')+'\nSubject: '+(r.subject||'')+'\n\n'+(r.body||'')
+    +'\n\nStatus: '+r.status+(r.next_followup_at?('\nFollow-up due: '+r.next_followup_at):''));
 }
 
-/* ---------- templates ---------- */
-let templatesCache=[];
-async function loadTemplateList(){
-  templatesCache = await api('GET','/api/templates');
-  $('#t-select').innerHTML = templatesCache.map(t=>`<option value="${t.id}">${esc(t.name)}</option>`).join('');
-  if(templatesCache.length) loadTemplate();
-}
-function loadTemplate(){
-  const t = templatesCache.find(x=>x.id==$('#t-select').value);
-  if(!t) return;
-  $('#t-name').value=t.name||''; $('#t-family').value=t.role_family||'generic';
-  $('#t-subject').value=t.subject_tpl||''; $('#t-body').value=t.body_tpl||'';
-}
-function newTemplate(){
-  $('#t-select').value=''; $('#t-name').value=''; $('#t-subject').value=''; $('#t-body').value='';
-}
-async function saveTemplate(){
-  const b={name:$('#t-name').value, role_family:$('#t-family').value,
-    subject_tpl:$('#t-subject').value, body_tpl:$('#t-body').value};
-  if(!b.name) return;
-  if($('#t-select').value) await api('PUT','/api/templates/'+$('#t-select').value,b);
-  else { const r=await api('POST','/api/templates',b); await loadTemplateList(); $('#t-select').value=r.id; }
-  loadTemplateList();
+// Follow-ups go through the queue like everything else, so a bump can never be
+// the one mail sent without being read. Repointed here rather than deleted when
+// the Compose tab went.
+async function queueFollowup(outreachId){
+  const r = await api('POST','/api/queue/followup',{outreach_id:outreachId});
+  if(r.error){ alert(r.error); return; }
+  document.querySelector('#nav button[data-tab="queue"]').click();
+  await loadQueueTab();
+  $('#q-result').innerHTML = flag('Follow-up drafted from your template. Read it, then send.','good');
 }
 
-/* ---------- profile ---------- */
+// "Write" on a contact: draft for that one person and take you to the result.
+// The Write button used to open the Compose tab, which no longer exists, so
+// without this the Contacts tab would have had a button pointing at nothing.
+async function writeToContact(contactId){
+  const r = await api('POST','/api/queue/draft',{contact_id:contactId});
+  if(r.error){ alert(r.error); return; }
+  document.querySelector('#nav button[data-tab="queue"]').click();
+  await loadQueueTab();
+  await openQueueRow(r.queue.id);
+}
 const P_FIELDS=[['full_name','Full name'],['headline','Headline (one line)'],['email','Email'],
   ['phone','Phone'],['linkedin','LinkedIn URL'],['github','GitHub / site'],['website','Website'],
   ['city','City'],['target_roles','Target roles'],['years_exp','Years of experience'],

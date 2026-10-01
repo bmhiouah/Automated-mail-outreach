@@ -1,4 +1,14 @@
-"""Composing: generate from a template, re-score a hand-edited mail, propose profile fields from a CV."""
+"""Re-scoring a mail and reading a pasted CV. Drafting itself lives in `queue.py`.
+
+What is left here is the two things the queue does not own: grading text (the
+Compose tab is gone, but re-scoring a draft you just edited is exactly the check
+you want before validating) and the CV reader behind the Profile tab.
+
+The template-drafting endpoint that used to live here was removed rather than
+left behind. It rendered one of four fixed templates with `{{placeholders}}`,
+which is precisely the generic mail the model exists to replace - and a queue full
+of it read as "the generator is broken".
+"""
 
 import os
 import sys
@@ -11,51 +21,6 @@ import cv_parse   # noqa: E402
 import email_gen  # noqa: E402
 from domain import enrich_contact, get_profile  # noqa: E402
 
-
-def api_generate(payload):
-    cid = payload.get("contact_id")
-    tid = payload.get("template_id")
-    if not cid:
-        return {"error": "contact_id required"}
-    rows = db.query("SELECT * FROM contacts WHERE id=?", [cid])
-    if not rows:
-        return {"error": "contact not found"}
-    contact = enrich_contact(dict(rows[0]))
-    templates = db.query("SELECT * FROM templates WHERE id=?", [tid]) if tid else []
-    if not templates:
-        templates = db.query("SELECT * FROM templates WHERE active=1 ORDER BY id LIMIT 1")
-    if not templates:
-        return {"error": "no template available"}
-    tpl = templates[0]
-    ctx = email_gen.build_context(contact, contact.get("company"), get_profile())
-    subject = email_gen.render(tpl["subject_tpl"], ctx)
-    body = email_gen.render(tpl["body_tpl"], ctx)
-
-    # Variables that resolved to nothing. Invisible in the output but fatal to
-    # the mail ("I'm , - on ,"), so they are surfaced as the first flags.
-    empty = []
-    for tpl_text in (tpl["subject_tpl"], tpl["body_tpl"]):
-        for k in email_gen.empty_placeholders(tpl_text, ctx):
-            if k not in empty:
-                empty.append(k)
-    flags = email_gen.quality_flags(ctx, body)
-    if empty:
-        flags.insert(0, "empty fields - these placeholders rendered as nothing: "
-                        + ", ".join(empty))
-    return {
-        "subject": subject,
-        "body": body,
-        "quality": email_gen.score_email(subject, body, ctx),
-        "template_id": tpl["id"],
-        "to": contact.get("email") or contact.get("email_guess") or "",
-        "contact_name": f"{contact.get('first_name','')} {contact.get('last_name','')}".strip(),
-        "company": contact.get("company_name") or "",
-        "company_id": (contact.get("company") or {}).get("id"),
-        "brief": ctx.get("company_research") or "",
-        "brief_hook": ctx.get("company_hook") or "",
-        "empty_fields": empty,
-        "flags": flags,
-    }
 
 def api_score(payload):
     rows = db.query("SELECT * FROM contacts WHERE id=?", [payload.get("contact_id")]) \
@@ -94,7 +59,6 @@ def api_parse_cv(payload):
 
 
 ROUTES = [
-    ("POST", "generate", lambda p, rest, body: api_generate(body)),
     ("POST", "score", lambda p, rest, body: api_score(body)),
     ("POST", "parse-cv", lambda p, rest, body: api_parse_cv(body)),
 ]

@@ -105,16 +105,36 @@ def hooks(missing=False):
 
 
 def backup():
+    """A safe copy of the database, WAL included.
+
+    The database runs in WAL mode, so recent commits live in `cold_approach.db-wal`
+    until a checkpoint. A plain `cp cold_approach.db backup.db` copies the main
+    file WITHOUT those commits and silently produces a backup that is missing
+    everything written in the last while - which is exactly the data you would
+    be copying in order to keep. `sqlite3.backup()` reads a consistent snapshot
+    including the WAL, and the checkpoint afterwards lets the .db file be deleted
+    safely if you ever want to move just that.
+    """
     os.makedirs(BACKUP_DIR, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d-%H%M")
     dest = os.path.join(BACKUP_DIR, f"cold_approach-{stamp}.db")
     src = sqlite3.connect(db.DB_PATH)
     out = sqlite3.connect(dest)
-    src.backup(out)
-    out.close()
-    src.close()
+    try:
+        src.backup(out)                      # consistent snapshot, WAL included
+    finally:
+        out.close()
+        # Fold the WAL back into the main file so the plain .db is self-sufficient.
+        try:
+            src.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            src.commit()
+        except sqlite3.Error:
+            pass
+        src.close()
     size = os.path.getsize(dest)
     print(f"  backed up to {dest} ({size//1024} KB)")
+    print("  (WAL included - do not copy the .db file by hand, it would miss "
+          "recent commits)")
 
 
 def test():

@@ -1,5 +1,26 @@
 {
   "_comment": "Copy me to config.json and paste your keys. config.json is gitignored, so your keys never leave this machine.",
   "hunter_api_key": "paste your Hunter.io key here",
-  "prospeo_api_key": "paste your Prospeo key here"
+  "prospeo_api_key": "paste your Prospeo key here",
+
+  "_llm": "Optional. Any OpenAI-compatible endpoint. Without it the Queue tab still works - drafts come from your templates instead. Env vars OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL override these, so a key need never touch this file.",
+  "llm": {
+    "api_key": "sk-...",
+    "base_url": "https://api.openai.com/v1",
+    "model": "gpt-4o-mini",
+    "temperature": 0.7,
+    "max_tokens": 700
+  },
+
+  "_mail": "How the Validate & send button actually behaves. 'dry' builds and checks the message but never transmits it - keep it until you have read a few real drafts. 'live' sends through SMTP the moment you press Validate on a row.",
+  "mail": {
+    "send_mode": "dry",
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 465,
+    "smtp_user": "you@gmail.com",
+    "smtp_password": "your 16-character app password, not your account password",
+    "smtp_ssl": true,
+    "from_name": "Your Name",
+    "daily_cap": 40
+  }
 }
