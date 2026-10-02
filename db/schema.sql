@@ -307,9 +307,12 @@ CREATE TABLE IF NOT EXISTS mail_queue (
   -- pending  -> drafted, awaiting review. The only state a new row may sit in.
   -- validated -> you approved the text. Not sent yet - see sent_at.
   -- sent     -> handed to SMTP. sent_at and message_id are set.
-  -- cancelled -> you rejected it. Kept, never deleted: "why did I not write to
-  --              this person" is a question worth being able to answer later.
   -- failed   -> approved but the SMTP call failed; the reason is in send_error.
+  --
+  -- There is no `cancelled`: rejecting a draft DELETES the row. The same prompt
+  -- is cached in fetch_log, so a discarded draft can be regenerated for free and
+  -- keeping it only makes the queue longer. Cancel refuses to touch a `sent` row,
+  -- which is the one record that a piece of text actually reached a person.
   -- Editing is not a state: a row being edited is still `pending`.
   status        TEXT DEFAULT 'pending',
   channel       TEXT DEFAULT 'email',      -- email now; linkedin later
@@ -411,7 +414,10 @@ CREATE TABLE IF NOT EXISTS fetch_log (
   endpoint    TEXT NOT NULL,          -- domain-finder | domain-search | people-find
   request_key TEXT NOT NULL,          -- normalised params, e.g. "domain=janestreet.com"
   http_status INTEGER,
-  credits     REAL DEFAULT 0,         -- what this call cost, 0 for free endpoints
+  credits     REAL DEFAULT 0,         -- MONEY: what a metered provider charged.
+  -- tokens is separate: the LLM has no credits, and putting prompt_tokens in the
+  -- credits column made the running total unreadable as a budget.
+  tokens      INTEGER DEFAULT 0,
   ok          INTEGER DEFAULT 1,
   error       TEXT,
   raw_path    TEXT,                   -- file under data/raw/ holding the response

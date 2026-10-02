@@ -35,8 +35,9 @@ narrow one:
 ```
 llm.py (or a template)  ->  mail_queue (pending)
                               |  you may edit it freely
-                              +-- cancel --> cancelled, kept, not a contact
-                              +-- validate --> outreach row --> mailer.send()
+                              +-- cancel --> the row is DELETED
+                              +-- skip   --> untouched, comes back later
+                              +-- send   --> outreach row --> mailer.send()
                                                     |  accepted by SMTP?
                                                     +-- yes --> contact_touchpoints
                                                     +-- no  --> nothing recorded
@@ -53,6 +54,10 @@ Three properties this shape is responsible for:
   Send, Cancel and Skip all reload the next pending row. `Skip` deliberately
   changes nothing on disk — a skip that cancelled would quietly drop people out
   of the queue — so the list underneath stays a way back to what you deferred.
+  `Cancel` deletes the row outright: an identical prompt is cached in `fetch_log`,
+  so a discarded draft can be regenerated for free and keeping it buys nothing.
+  It still refuses to touch a `sent` row, which is the only record that a given
+  text actually reached someone.
 * **A dry run is not a send.** `send_mode` defaults to `dry`: the message is built
   and every check runs, but nothing is transmitted and **no touchpoint is written**.
   Were a dry run to append to the ledger, "who is left to contact" would start

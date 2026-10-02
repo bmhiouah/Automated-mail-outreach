@@ -188,13 +188,13 @@ def status():
     # numeric cost column, shared with the paid providers). There is no
     # `prompt_tokens` column, and asking for one took the Queue status endpoint
     # down with a 500 rather than returning anything useful.
-    spent = db.query("SELECT COUNT(*) n, COALESCE(SUM(credits),0) tok "
+    spent = db.query("SELECT COUNT(*) n, COALESCE(SUM(tokens),0) tok "
                      "FROM fetch_log WHERE provider='llm'")[0]
     return {"configured": True, "model": cfg["model"], "base_url": cfg["base_url"],
             "calls": spent["n"], "prompt_tokens": int(spent["tok"] or 0),
             "max_tokens": cfg["max_tokens"],
             "cached_hits": db.query("SELECT COUNT(*) n FROM fetch_log WHERE provider='llm' "
-                                    "AND credits=0 AND ok=1")[0]["n"]}
+                                    "AND tokens=0 AND ok=1")[0]["n"]}
 
 
 def _request_key(model, system, prompt, temperature):
@@ -310,7 +310,7 @@ def chat(prompt, system=None, temperature=None, max_tokens=None, force=False,
 
     if not res["ok"]:
         db.record_fetch("llm", ENDPOINT, key, http_status=res.get("status"),
-                        credits=tokens, ok=False,
+                        tokens=tokens, ok=False,
                         error=res.get("error") or "request failed")
         return {"ok": False, "error": _explain_http(res.get("error"), model),
                 "model": model, "tokens": tokens}
@@ -330,7 +330,7 @@ def chat(prompt, system=None, temperature=None, max_tokens=None, force=False,
         elif text.get("reasoning"):
             detail = " The model returned only internal reasoning."
         db.record_fetch("llm", ENDPOINT, key, http_status=res.get("status"),
-                        credits=tokens, ok=False,
+                        tokens=tokens, ok=False,
                         error=f"empty reply (finish_reason={finish})")
         return {"ok": False, "model": model, "tokens": tokens,
                 "error": f"the model returned no answer.{detail}",
@@ -350,14 +350,14 @@ def chat(prompt, system=None, temperature=None, max_tokens=None, force=False,
         # diagnosed from the stored reply instead of guessed at.
         raw_path, sha = db.save_raw("llm", ENDPOINT, key, res["body"])
         db.record_fetch("llm", ENDPOINT, key, http_status=res.get("status"),
-                        credits=tokens, ok=False, error=str(exc), raw_path=raw_path,
+                        tokens=tokens, ok=False, error=str(exc), raw_path=raw_path,
                         response_hash=sha)
         return {"ok": False, "error": f"{exc} (raw reply kept at {raw_path})",
                 "model": model, "tokens": tokens, "text": content}
 
     raw_path, sha = db.save_raw("llm", ENDPOINT, key, res["body"])
     db.record_fetch("llm", ENDPOINT, key, http_status=res.get("status"),
-                    credits=tokens, ok=True, raw_path=raw_path, response_hash=sha)
+                    tokens=tokens, ok=True, raw_path=raw_path, response_hash=sha)
     return {"ok": True, "subject": subject, "body": bodytext, "model": model,
             "tokens": tokens, "cached": False, "text": content, "specifics": specifics,
             "_key": key}

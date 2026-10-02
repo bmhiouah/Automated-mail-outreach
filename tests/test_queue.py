@@ -220,13 +220,21 @@ class TestEditing(QueueFixture):
 
 
 class TestCancellation(QueueFixture):
-    def test_cancelling_keeps_the_row(self):
-        """'Why did I not write to this person' is worth being able to answer."""
+    def test_cancelling_deletes_the_row(self):
+        """Cancelling discards the draft. Keeping it was justified by "why did I not
+        write to this person", which the LLM cache answers for free: an identical
+        prompt is never paid for twice, so a rejected draft is worth nothing."""
+        row = self.draft()
+        r = queue.api_cancel({"id": row["id"]})
+        self.assertEqual(r["status"], "deleted")
+        self.assertEqual(db.query("SELECT * FROM mail_queue WHERE id=?",
+                                  [row["id"]]), [])
+
+    def test_cancelling_twice_is_harmless(self):
+        """The UI advances immediately, so a double click must not 500."""
         row = self.draft()
         queue.api_cancel({"id": row["id"]})
-        kept = db.query("SELECT * FROM mail_queue WHERE id=?", [row["id"]])
-        self.assertEqual(len(kept), 1)
-        self.assertEqual(kept[0]["status"], "cancelled")
+        self.assertIn("error", queue.api_cancel({"id": row["id"]}))
 
     def test_a_cancelled_draft_still_counts_as_not_contacted(self):
         """The ledger, not the queue, decides who has been reached."""
@@ -234,10 +242,14 @@ class TestCancellation(QueueFixture):
         queue.api_cancel({"id": row["id"]})
         self.assertIn(self.cid, [r["id"] for r in queue.contacts_to_contact()])
 
-    def test_a_sent_mail_cannot_be_cancelled(self):
+    def test_a_sent_mail_is_never_deleted(self):
+        """Cancel deletes the row. That has to stop at `sent`: it is the only
+        record that this text actually left the machine."""
         row = self.draft()
         db.execute("UPDATE mail_queue SET status='sent' WHERE id=?", [row["id"]])
         self.assertIn("already sent", queue.api_cancel({"id": row["id"]})["error"])
+        self.assertEqual(len(db.query("SELECT * FROM mail_queue WHERE id=?",
+                                      [row["id"]])), 1)
 
 
 class TestSendGate(QueueFixture):
@@ -622,13 +634,26 @@ class TestPickingWhoToWriteTo(QueueFixture):
         for key in ("cities", "types", "desks"):
             self.assertIn(key, r)
 
-    def test_n_remaining_counts_the_rows_returned_not_the_universe(self):
-        """With a limit in force, `len(rows)` is the honest number beside the list.
-        Counting the whole table made a filtered view read as if it had produced
-        hundreds of results."""
-        r = self._p(limit="2")
-        self.assertLessEqual(r["n_remaining"], 2)
-        self.assertEqual(r["n_remaining"], len(r["remaining"]))
+    def test_n_remaining_is_the_total_not_the_page(self):
+        """It is shown as "to go", so it must ignore the page limit. Reporting
+        `len(rows)` made a city with 45 people left read as "0 to go"."""
+        everything = self._p()["n_remaining"]
+        page = self._p(limit="1")
+        self.assertEqual(page["n_remaining"], everything)
+        self.assertEqual(page["n_shown"], min(1, everything))
+
+    def test_a_bare_string_filter_is_not_read_as_its_first_character(self):
+        """`(params.get(k) or [""])[0]` turned {'city': 'London'} into 'L' - a
+        one-letter filter that matched nothing and looked like an empty queue."""
+        # The fixture's contact has no city, so give it one: otherwise both forms
+        # agree on zero and the equality below proves nothing.
+        db.execute("UPDATE contacts SET city='London' WHERE id=?", [self.cid])
+        as_list = queue.api_todo({"city": ["London"]})["n_remaining"]
+        as_string = queue.api_todo({"city": "London"})["n_remaining"]
+        self.assertEqual(as_list, as_string)
+        self.assertGreaterEqual(as_list, 1)
+        self.assertIn(self.cid,
+                      [r["id"] for r in queue.api_todo({"city": ["London"]})["remaining"]])
 
 
 class TestFollowUpsGoThroughTheQueue(QueueFixture):

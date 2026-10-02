@@ -399,12 +399,19 @@ def save_raw(provider, endpoint, request_key, body_bytes):
 
 
 def record_fetch(provider, endpoint, request_key, http_status=None, credits=0.0,
-                 ok=True, error=None, raw_path=None, response_hash=None):
-    """Log one external call. Idempotent on (provider, endpoint, request_key)."""
+                 ok=True, error=None, raw_path=None, response_hash=None, tokens=0):
+    """Log one external call. Idempotent on (provider, endpoint, request_key).
+
+    `credits` is money: what a metered provider charged. `tokens` is a separate
+    column because the LLM has no credits at all - storing prompt_tokens in
+    `credits` made `credits_spent()` report 28,000 "credits" for 18 model calls,
+    which is a number nobody budgeting an API can interpret.
+    """
     execute(
         "INSERT OR REPLACE INTO fetch_log (provider,endpoint,request_key,http_status,credits,"
-        "ok,error,raw_path,response_hash,fetched_at) VALUES (?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
-        [provider, endpoint, request_key, http_status, credits, 1 if ok else 0,
+        "tokens,ok,error,raw_path,response_hash,fetched_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,CURRENT_TIMESTAMP)",
+        [provider, endpoint, request_key, http_status, credits, tokens, 1 if ok else 0,
          error, raw_path, response_hash])
     return fetch_seen(provider, endpoint, request_key)
 
@@ -419,6 +426,16 @@ def credits_spent(provider=None, since=None):
     if since:
         sql += " AND fetched_at >= ?"
         args.append(since)
+    return query(sql, args)[0]["n"]
+
+
+def tokens_spent(provider=None):
+    """Prompt tokens, which is what the LLM actually consumes."""
+    sql = "SELECT COALESCE(SUM(tokens),0) n FROM fetch_log WHERE 1=1"
+    args = []
+    if provider:
+        sql += " AND provider=?"
+        args.append(provider)
     return query(sql, args)[0]["n"]
 
 

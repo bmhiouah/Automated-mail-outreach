@@ -551,13 +551,13 @@ async function validateQueueRow(){
 async function cancelQueueRow(){
   const id = $('#q-id').value;
   if(!id) return;
-  if(!confirm('Cancel this draft? It is kept for the record, nothing is sent, and they '
-    +'stay in your "not contacted" list.')) return;
+  if(!confirm('Cancel this draft? It is deleted - nothing is sent, and they stay in '
+    +'your "not contacted" list. You can always regenerate it later for free.')) return;
   const r = await api('POST','/api/queue/cancel',{id});
   if(r.error){ $('#q-result').innerHTML = flag(r.error,'bad'); return; }
   loadTodo();
   await showNextDraft();
-  $('#q-result').innerHTML = flag('Cancelled. They are still in your "not contacted" list.','gray');
+  $('#q-result').innerHTML = flag('Draft cancelled and deleted. They are still in your "not contacted" list.','gray');
 }
 
 // Skip without deciding anything: moves the cursor, leaves the draft pending.

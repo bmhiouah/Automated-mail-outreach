@@ -93,9 +93,10 @@ Above the buttons you get:
   an explicit confirmation even after you approve.
 - Everything the mail-quality checker objects to.
 
-**Send** sends it. **Cancel** keeps the draft for the record and does *not* count
-as contact. **Skip** moves on and decides nothing — it comes back to you later.
-Either way the next draft loads itself.
+**Send** sends it. **Cancel** deletes the draft — nothing is sent, and the person
+stays in your "not contacted" list (you can always regenerate it for free). **Skip**
+moves on and decides nothing — it comes back to you later. Either way the next
+draft loads itself.
 
 **3 · Waiting on you.** The full list of drafts, for the ones you skipped. Click
 any row to bring it back up. This is a safety net, not the way through the queue.

@@ -123,18 +123,18 @@ def api_queue(params):
     without a second click, so the contact name and firm are in the row itself.
     """
     where, args = [], []
-    status = (params.get("status") or [""])[0]
+    status = _first(params, "status")
     if status:
-        if status not in ("pending", "validated", "sent", "cancelled", "failed"):
+        if status not in ("pending", "validated", "sent", "failed"):
             return {"error": "unknown queue status"}
         where.append("q.status=?")
         args.append(status)
     else:
         # Default view is the working set: what still needs a decision.
         where.append("q.status IN ('pending','validated','failed')")
-    if (params.get("contact_id") or [""])[0]:
+    if _first(params, "contact_id"):
         where.append("q.contact_id=?")
-        args.append(params["contact_id"][0])
+        args.append(_first(params, "contact_id"))
     sql = ("SELECT q.*, c.first_name, c.last_name, c.company_name, c.job_title, "
            "c.desk, co.name AS firm, co.type AS firm_type "
            "FROM mail_queue q "
@@ -146,8 +146,13 @@ def api_queue(params):
     return db.query(sql, args)
 
 
-def api_queue_counts():
-    """One row per status, for the tab badges."""
+def api_queue_counts(params=None):
+    """One row per status, for the tab badges.
+
+    `cancelled` is not a status: cancelling deletes the row. It is still counted
+    here so the badge renders as zero rather than being absent, which would make
+    the UI's own filter list quietly inconsistent with the data.
+    """
     rows = db.query("SELECT status, COUNT(*) n FROM mail_queue GROUP BY status")
     counts = {r["status"]: r["n"] for r in rows}
     for s in ("pending", "validated", "sent", "cancelled", "failed"):
@@ -193,19 +198,26 @@ def api_queue_get(payload):
     return q
 
 
-def contacts_to_contact(filters=None, limit=None):
-    """Who has NOT been contacted - the list that makes the tool idempotent.
+def _first(params, key, default=""):
+    """One query-string value, whether it arrived as a list or a bare string.
 
-    Reads `contact_touchpoints`, the append-only ledger, not the queue or the
-    outreach table. That is the point: a cancelled draft, a failed send and a
-    mail that is still sitting in the queue all leave the person in this list,
-    because none of them means anybody was actually emailed.
-
-    The filters are the ones you actually pick people by. City first: the whole
-    project targets Paris and London, and "everyone in Paris I have not written
-    to" is the actual question. `type` is the firm taxonomy from taxonomy.py.
+    Over HTTP `parse_qs` always gives lists, but a test, a script or a future
+    in-process caller can pass `{'city': 'London'}`. The old `(params.get(k) or
+    [""])[0]` then returned 'L' - a one-letter city filter that matched nothing
+    and looked like an empty queue rather than a bug.
     """
-    filters = filters or {}
+    v = (params or {}).get(key)
+    if v is None:
+        return default
+    if isinstance(v, (list, tuple)):
+        return v[0] if v else default
+    return v
+
+
+def _remaining_where(filters):
+    """The WHERE clause and args for 'not yet contacted', shared by the page of
+    rows and by the total. Two copies of this drift, and when they did the Queue
+    tab reported "0 to go" for a city with hundreds of people left."""
     where = ["c.id NOT IN (SELECT contact_id FROM contact_touchpoints "
              "WHERE direction='outbound' AND contact_id IS NOT NULL)"]
     args = []
@@ -213,8 +225,7 @@ def contacts_to_contact(filters=None, limit=None):
         where.append("c.company_id=?")
         args.append(filters["company_id"])
     if filters.get("city"):
-        # Case-insensitive and substring-free: 'London' should not also match
-        # 'London Bridge', and 'london' should not be a different city.
+        # Case-insensitive and exact: 'London' must not also match 'London Bridge'.
         where.append("lower(c.city) = lower(?)")
         args.append(filters["city"])
     if filters.get("type"):
@@ -237,6 +248,23 @@ def contacts_to_contact(filters=None, limit=None):
         # Someone already sitting in the review queue does not need a second draft.
         where.append("c.id NOT IN (SELECT contact_id FROM mail_queue "
                      "WHERE status='pending' AND contact_id IS NOT NULL)")
+    return where, args
+
+
+def contacts_to_contact(filters=None, limit=None):
+    """Who has NOT been contacted - the list that makes the tool idempotent.
+
+    Reads `contact_touchpoints`, the append-only ledger, not the queue or the
+    outreach table. That is the point: a cancelled draft, a failed send and a
+    mail that is still sitting in the queue all leave the person in this list,
+    because none of them means anybody was actually emailed.
+
+    The filters are the ones you actually pick people by. City first: the whole
+    project targets Paris and London, and "everyone in Paris I have not written
+    to" is the actual question. `type` is the firm taxonomy from taxonomy.py.
+    """
+    filters = filters or {}
+    where, args = _remaining_where(filters)
     sql = ("SELECT c.*, co.name AS firm, co.tier, co.type AS firm_type, "
            "(SELECT COUNT(*) FROM mail_queue q WHERE q.contact_id=c.id "
            "AND q.status='pending') AS pending_drafts "
@@ -245,6 +273,18 @@ def contacts_to_contact(filters=None, limit=None):
     if limit:
         sql += f" LIMIT {int(limit)}"
     return db.query(sql, args)
+
+
+def count_remaining(filters=None):
+    """How many people match, ignoring the page limit.
+
+    This is the number the UI shows as "to go", so it has to be the total and not
+    the length of the page that was fetched.
+    """
+    where, args = _remaining_where(filters or {})
+    return db.query("SELECT COUNT(*) n FROM contacts c "
+                    "LEFT JOIN companies co ON co.id=c.company_id WHERE "
+                    + " AND ".join(where), args)[0]["n"]
 
 
 def api_todo(params):
@@ -256,13 +296,15 @@ def api_todo(params):
     filter that wastes a click.
     """
     keys = ("company_id", "city", "type", "tier", "desk", "search", "no_pending")
-    filters = {k: (params.get(k) or [""])[0] for k in keys}
+    filters = {k: _first(params, k) for k in keys}
     filters = {k: v for k, v in filters.items() if v != ""}
-    rows = contacts_to_contact(filters, (params.get("limit") or [None])[0])
+    limit = _first(params, "limit")
+    rows = contacts_to_contact(filters, limit or None)
     reached = db.query("SELECT COUNT(DISTINCT contact_id) n FROM contact_touchpoints "
                        "WHERE direction='outbound'")[0]["n"]
     pending = db.query("SELECT COUNT(*) n FROM mail_queue WHERE status='pending'")[0]["n"]
-    return {"remaining": rows, "n_remaining": len(rows),
+    return {"remaining": rows, "n_remaining": count_remaining(filters),
+            "n_shown": len(rows),
             "n_contacted": reached,
             "n_contacts": db.query("SELECT COUNT(*) n FROM contacts")[0]["n"],
             "n_pending": pending,
@@ -289,7 +331,7 @@ def api_todo(params):
 
 def api_history(params):
     """The touchpoint ledger, newest first: who was contacted, when, and how."""
-    limit = int((params.get("limit") or [200])[0])
+    limit = int(_first(params, "limit", 200) or 200)
     return db.query(
         "SELECT t.*, c.first_name, c.last_name, c.company_name, co.name AS firm "
         "FROM contact_touchpoints t "
