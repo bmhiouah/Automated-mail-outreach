@@ -189,10 +189,22 @@ def status():
     # `prompt_tokens` column, and asking for one took the Queue status endpoint
     # down with a 500 rather than returning anything useful.
     spent = db.query("SELECT COUNT(*) n, COALESCE(SUM(tokens),0) tok "
-                     "FROM fetch_log WHERE provider='llm'")[0]
+                 "FROM fetch_log WHERE provider='llm'")[0]
+    # Surface a recent failure. Without this the Queue simply stops working when
+    # the key lapses, and a dead button reads as a bug in the app rather than a
+    # credential that expired.
+    last_bad = db.query("SELECT error, fetched_at FROM fetch_log WHERE provider='llm' "
+                        "AND ok=0 ORDER BY fetched_at DESC LIMIT 1")
+    last_ok = db.query("SELECT fetched_at FROM fetch_log WHERE provider='llm' "
+                       "AND ok=1 ORDER BY fetched_at DESC LIMIT 1")
+    bad_at = last_bad[0]["fetched_at"] if last_bad else None
+    ok_at = last_ok[0]["fetched_at"] if last_ok else None
+    failing = bool(bad_at and (not ok_at or str(bad_at) > str(ok_at)))
     return {"configured": True, "model": cfg["model"], "base_url": cfg["base_url"],
             "calls": spent["n"], "prompt_tokens": int(spent["tok"] or 0),
             "max_tokens": cfg["max_tokens"],
+            "failing": failing,
+            "last_error": _explain_http(last_bad[0]["error"], cfg["model"]) if failing else "",
             "cached_hits": db.query("SELECT COUNT(*) n FROM fetch_log WHERE provider='llm' "
                                     "AND tokens=0 AND ok=1")[0]["n"]}
 
@@ -265,14 +277,66 @@ def _read_cached(row):
         return None
 
 
+def _explain_http(error, model):
+    """Turn a raw HTTP failure into something the user can act on.
+
+    A bare "HTTP 400" in the Queue tells you nothing about which of the four
+    likely causes it was, and on this endpoint they are all common: the model is
+    not entitled, the model does not speak /chat/completions, the key is wrong,
+    or the budget is exhausted.
+
+    The expired-signature case gets its own branch because it is this project's
+    real failure mode: an AWS Bedrock key is a SigV4 signature with a clock on
+    it, and when it lapses every model fails at once with a message that looks
+    like an entitlement problem. Without this the Queue just stops working and
+    reads as "the button is broken".
+    """
+    text = (error or "").strip()
+    low = text.lower()
+    if "signature expired" in low:
+        import re as _re
+        # Search the lowercased text for digits only. Matching `\d+T\d+Z` there
+        # can never fire, because `low` has already turned the T and Z into
+        # lowercase - which is exactly what made this print "expired on some time
+        # ago" while the date was sitting in the message.
+        when = _re.search(r"signature expired:\s*(\d{4}-\d{2}-\d{2}|\d{8})", low)
+        stamp = when.group(1) if when else "an earlier date"
+        return (f"Your Bedrock key expired on {stamp}. It is a time-limited AWS "
+                f"signature, not a permanent key, so every model fails at once. "
+                f"Get a fresh one and put it in config.json (llm.api_key) - no "
+                f"code change is needed.")
+    if "invalid_api_key" in low or "api key" in low and "401" in low:
+        return (f"{text} - the key was rejected outright. Check llm.api_key in "
+                f"config.json.")
+    if "404" in low:
+        return (f"{text} - the endpoint has no /chat/completions at that base_url, "
+                f"or the model '{model}' does not exist there. "
+                f"python3 app/llm.py --models lists what this endpoint serves.")
+    if "401" in low or "403" in low:
+        return (f"{text} - the key was refused, or this account is not entitled to "
+                f"'{model}'. Try another model, or refresh the key.")
+    if "400" in low:
+        if "does not support" in low:
+            return (f"{text} - '{model}' does not speak /chat/completions on this "
+                    f"endpoint. Pick another from python3 app/llm.py --models.")
+        return f"{text} - the provider rejected the request; check the model name."
+    if "429" in low:
+        return f"{text} - rate limited or out of quota. Wait, then re-run."
+    return text or "the request failed"
+
+
 def chat(prompt, system=None, temperature=None, max_tokens=None, force=False,
-         model=None):
+         model=None, require_subject=True):
     """One chat call. Returns {ok, text, subject, body, model, tokens, cached}.
 
     `model` overrides the configured one for this call only. It is part of the
     cache key, so asking the same person twice with two different models costs
     two calls and neither is silently reused for the other - which is the whole
     point of being able to compare them.
+
+    `require_subject=False` is for callers that are not writing a mail: a
+    tailored CV has no subject line, and insisting on one turned every
+    successful LaTeX reply into a parse failure.
 
     Never raises for an expected failure - a refused key or a rate limit is a
     result the queue can display, not a 500 that loses the whole batch.
@@ -339,8 +403,9 @@ def chat(prompt, system=None, temperature=None, max_tokens=None, force=False,
         parsed = _extract_json(content)
         subject = (parsed.get("subject") or "").strip()
         bodytext = (parsed.get("body") or "").strip()
-        if not subject or not bodytext:
-            raise ValueError("the reply had no subject or no body")
+        if not bodytext or (require_subject and not subject):
+            raise ValueError("the reply had no subject or no body"
+                             if require_subject else "the reply had no body")
         # The facts the model says it used. Not decoration: this is what makes a
         # vague draft auditable instead of merely plausible, and it is shown next
         # to the mail so a claim can be checked against the database.
@@ -625,6 +690,65 @@ def generate_cv(contact, company, profile, base_cv, role_target="", force=False)
         "Return the tailored CV as plain text in the JSON body field.",
     ])
     return chat(prompt, system=CV_SYSTEM_PROMPT, max_tokens=2000, force=force)
+
+
+CV_LATEX_SYSTEM_PROMPT = (
+    "You edit a LaTeX CV for junior quant-finance roles in Paris and London. "
+    "You are editing an existing document, never writing a new one: every true "
+    "fact in the base must survive. You may reorder, re-weight and rephrase to "
+    "fit the opportunity, but never delete a qualification and never invent a "
+    "skill, a date, an employer, a metric or a tool. "
+    "The output must be valid LaTeX that compiles with pdflatex: keep the "
+    "preamble intact if you return one, use only packages the base already "
+    "loads, and balance every brace and environment. "
+    "Do not add markdown, code fences, commentary or an explanation - the "
+    "document is the entire answer. "
+    'Reply with JSON only: {"body": "the complete LaTeX document"}'
+)
+
+
+def generate_cv_latex(contact, company, profile, base_tex, instruction,
+                      role_target="", force=False, model=None):
+    """Tailor `main.tex` to one opportunity. Returns the model's reply.
+
+    The instruction is what the user actually typed in the CVs tab, so it is
+    given the top of the prompt: a standing spec ("drop the teaching section,
+    lead with the XVA work") should beat any generic default, not compete with
+    it. The base document is passed whole and must come back untouched in
+    content - only its emphasis changes.
+    """
+    firm = (company or {}).get("name") or (contact or {}).get("company_name") or ""
+    who = f"{(contact or {}).get('first_name') or ''} " \
+          f"{(contact or {}).get('last_name') or ''}".strip()
+    role = role_target or (contact or {}).get("job_title") or ""
+    if not (instruction or "").strip():
+        instruction = ("Reorder and re-weight the CV for this opportunity, "
+                       "keeping every qualification and every fact.")
+    prompt = "\n".join([
+        "Produce the tailored CV described below.",
+        "",
+        "INSTRUCTION FROM THE USER (this is the specification):",
+        (instruction or "").strip(),
+        "",
+        _line("Firm", firm),
+        _line("Target role", role),
+        _line("Person the CV is written for", who),
+        _line("Firm brief (intel)", (company or {}).get("research"), 900),
+        _line("Candidate headline", profile.get("headline")),
+        _line("Target roles the user is pursuing", profile.get("target_roles"), 400),
+        "",
+        "BASE LaTeX DOCUMENT - all of it, verbatim. This is the master file:",
+        "---",
+        (base_tex or "")[:60000] or "(no main.tex on file)",
+        "---",
+        "",
+        "Return the whole document as LaTeX in the JSON body field.",
+    ])
+    # A CV is ~11k characters of LaTeX and the reply must be at least as long.
+    # The mail default (2400) was sized for a 150-word mail and would have cut
+    # the document in half mid-environment.
+    return chat(prompt, system=CV_LATEX_SYSTEM_PROMPT, max_tokens=16000,
+                force=force, model=model, require_subject=False)
 
 
 if __name__ == "__main__":

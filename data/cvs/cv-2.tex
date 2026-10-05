@@ -1,0 +1,233 @@
+%-------------------------
+% Resume in Latex
+% Author : Badre Mhiouah
+% Based off of: https://github.com/sb2nov/resume
+% License : MIT
+%------------------------
+
+\documentclass[letterpaper,10.6pt]{article}
+
+\usepackage{latexsym}
+\usepackage[empty]{fullpage}
+\usepackage{titlesec}
+\usepackage{marvosym}
+\usepackage[usenames,dvipsnames]{color}
+\usepackage{verbatim}
+\usepackage{enumitem}
+\usepackage[hidelinks]{hyperref}
+\usepackage{fancyhdr}
+\usepackage[english]{babel}
+\usepackage{tabularx}
+\usepackage{changepage}
+\input{glyphtounicode}
+
+
+% Define \skillgroup macro
+\newcommand{\skillgroup}[2]{\textbf{#1}: #2}
+
+
+\usepackage{graphicx}
+%----------FONT OPTIONS----------
+% sans-serif
+% \usepackage[sfdefault]{FiraSans}
+% \usepackage[sfdefault]{roboto}
+% \usepackage[sfdefault]{noto-sans}
+% \usepackage[default]{sourcesanspro}
+
+% serif
+% \usepackage{CormorantGaramond}
+% \usepackage{charter}
+
+\usepackage[utf8]{inputenc} 
+\usepackage[english]{babel} 
+
+\usepackage{wrapfig}
+
+
+
+
+
+\pagestyle{fancy}
+\fancyhf{} % clear all header and footer fields
+\fancyfoot{}
+\renewcommand{\headrulewidth}{0pt}
+\renewcommand{\footrulewidth}{0pt}
+
+% Adjust margins
+\addtolength{\oddsidemargin}{-0.5in}
+\addtolength{\evensidemargin}{-0.5in}
+\addtolength{\textwidth}{1in}
+\addtolength{\topmargin}{-.5in}
+\addtolength{\textheight}{1.0in}
+
+\urlstyle{same}
+
+\raggedbottom
+\raggedright
+\setlength{\tabcolsep}{0in}
+
+% Sections formatting
+\titleformat{\section}{
+  \vspace{-4pt}\scshape\raggedright\large
+}{}{0em}{}[\color{black}\titlerule \vspace{-5pt}]
+
+% Ensure that generate pdf is machine readable/ATS parsable
+\pdfgentounicode=1
+
+%-------------------------
+% Custom commands
+\newcommand{\resumeItem}[1]{
+  \item\small{
+    {#1 \vspace{-2pt}}
+  }
+}
+
+\newcommand{\resumeSubheading}[4]{
+  \vspace{-2pt}\item
+    \begin{tabular*}{0.97\textwidth}[t]{l@{\extracolsep{\fill}}r}
+      \textbf{#1} & #2 \\
+      \textit{\small#3} & \textit{\small #4} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeSubSubheading}[2]{
+    \item
+    \begin{tabular*}{0.97\textwidth}{l@{\extracolsep{\fill}}r}
+      \textit{\small#1} & \textit{\small #2} \\
+    \end{tabular*}\vspace{-7pt}
+}
+
+\newcommand{\resumeProjectHeading}[2]{
+    \item
+    \begin{tabular*}{0.77\textwidth}{l@{\extracolsep{\fill}}r}
+      \small#1 & #2 \\
+    \end{tabular*}\vspace{-1pt}
+}
+
+\newcommand{\resumeSubItem}[1]{\resumeItem{#1}\vspace{-1pt}}
+
+\renewcommand\labelitemii{$\vcenter{\hbox{\tiny$\bullet$}}$}
+
+\newcommand{\resumeSubHeadingListStart}{\begin{itemize}[leftmargin=0.13in, label={}]}
+\newcommand{\resumeSubHeadingListEnd}{\end{itemize}}
+\newcommand{\resumeItemListStart}{\begin{itemize}}
+\newcommand{\resumeItemListEnd}{\end{itemize}\vspace{-5pt}}
+
+%-------------------------------------------
+%%%%%%  RESUME STARTS HERE  %%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+
+\begin{document}
+
+%----------HEADING----------
+\begin{center}
+    \textbf{\Huge \scshape Badre Mhiouah} 
+
+    \small +33 6 11 68 23 67 $|$ \href{mailto:badre.mhiouah@student-cs.fr}{\underline{mhiouah.badre@gmail.com} $|$ 
+    \href{https://www.linkedin.com/in/badre-mhiouah-194401227/}{\underline{linkedin.com/in/badre}}} $|$ \href{https://github.com/bmhiouah}{\underline{https://github.com/bmhiouah} $|$ }
+    
+\end{center}
+
+\begin{center}
+\textbf {\scshape Quantitative Finance \& Data Science} 
+\end{center}
+
+%-----------SUMMARY-----------
+\section*{Summary}
+Quantitative Developer with over 1.5 years of experience in derivatives trading (XVA, gap risk) and AI‑driven risk analytics at leading banks. Proven ability to design trading strategies, build risk models, and create data‑driven automation tools. Seeking a quant position on BNP Paribas’ structured products desk in Paris or London, leveraging strong programming, quantitative, and communication skills.
+
+%-----------EXPERIENCE-----------
+\section{Experience}
+  \resumeSubHeadingListStart
+      \resumeSubheading
+      {Societe Generale Corporate and Investment Banking : Data Scientist}{Jun.2025 -- Jul.2026}
+      {General Inspection}{Hong Kong}
+      \resumeItemListStart
+        \resumeItem{Partnered with \textbf{non-technical stakeholders} to identify \textbf{time-consuming, repetitive audit activities} and assess opportunities for automation, translating business needs into \textbf{data and AI use cases}.}
+        \resumeItem{Designed and prototyped \textbf{LLM-based solutions} using \textbf{prompt engineering and LLM APIs} to automate and accelerate audit workflows, including the enrichment, structuring, and analysis of \textbf{operational loss data}.}
+        \resumeItem{Developed a \textbf{Power BI platform} combining automated insights and \textbf{multi-level risk reporting}, enabling auditors to reduce manual analysis and gain faster access to \textbf{actionable risk information}.}
+        \resumeItem{Analyzed \textbf{large-scale trading datasets} from Delta One activities to identify \textbf{anomalous patterns, risk concentrations, and control weaknesses} across equity and index derivative products, supporting auditors in risk-focused investigations.}
+        \resumeItem{Performed \textbf{forensic analyses of trading and market data} to identify potential indicators of \textbf{market manipulation}.}
+        \resumeItem{Delivered \textbf{Python and Power BI training} to auditors, enabling \textbf{self-service analytics} and facilitating the adoption of data-driven approaches within the IGAD teams.}
+      \resumeItemListEnd
+
+    \resumeSubheading
+      {Barclays : Trader intern}{Aug.2023 -- Jan. 2024}
+      {Cross-asset derivatives trading desk}{Paris \& London}
+      \resumeItemListStart
+      \resumeItem {Developed a \textbf{trading strategy aimed at hedging own credit risk}, resulting in a \textbf{7\% boost in profitability} and a \textbf{5\% decrease in P\&L volatility}. (Bloomberg, Python, Machine learning)} 
+        \resumeItem{Improved \textbf{risk management instruments} to pinpoint counterparties with significant impacts on each XVA by country, currency and greeks. (Excel, VBA, API)}
+        \resumeItem{Modeled and calculated the effects of \textbf{gap risk} on both credit and own credit risks for the portfolio of the bank.}
+        \resumeItem{Developed \textbf{reporting tools} to regularly analyze gap risk, facilitating the identification of its key drivers.}
+        \resumeItem{Collected and cleaned \textbf{interest rate data} for major currencies, automated data processing, and developed optimal \textbf{neural network models for yield curve prediction} with backtesting and hyperparameter tuning. }
+    \resumeItemListEnd
+
+  \resumeSubHeadingListEnd
+
+%-----------EDUCATION-----------
+\section{Education}
+  \resumeSubHeadingListStart
+   \resumeSubheading
+  {CentraleSupélec}{Sep. 2020 -- Apr. 2023}
+  {Engineering Degree, Major in Mathematical Modelling \& Data Science, Minor in Financial Mathematics}{Paris, France}
+  \resumeItemListStart
+    \resumeItem{Relevant coursework: Mathematics, Statistics, Machine Learning, Optimization, Stochastic Models, Financial Modeling, Risk Management, Derivatives, Fixed Income, Economics, Negotiation course, Data structures, Algorithms \& Complexity.}
+    \resumeItemListEnd
+    \resumeSubheading
+      {Université Côte d'Azur}{Sep 2017 -- Apr. 2020}
+      {Bachelor’s degree in Advanced Mathematics}{Nice, France}
+      \resumeItemListStart
+        \resumeItem{Main courses: Topology, Complex analysis, Numerical analysis, Differential calculus, Algebra \& Geometry. \newline
+       }
+    \resumeItemListEnd
+  \resumeSubHeadingListEnd
+
+%-----------PERSONAL PROJECTS-----------
+\section{Personal Projects (Available on my GitHub)}
+\resumeSubHeadingListStart
+\resumeSubheading{Financial News Sentiment \& Market Analysis Pipeline}{Aug. 2026 -- Present}{Python, Hugging Face, FinBERT, FastAPI, PostgreSQL, Docker}{}
+\resumeItemListStart
+\resumeItem{\textbf{Goal: } Building an end-to-end AI pipeline to extract sentiment from financial news, transform it into quantitative signals, and evaluate its relationship with subsequent \textbf{stock market movements}.}
+\resumeItem{\textbf{AI \& Data Pipeline: } Collecting financial news and historical market data, processing and storing them in a database, and using \textbf{FinBERT} for domain-specific sentiment analysis and continuous sentiment scoring.}
+\resumeItem{\textbf{Quantitative Analysis: } Aggregating sentiment into trading signals and implementing simple \textbf{trading strategies and backtests} to evaluate predictive power, returns, and risk against baseline approaches.}
+\resumeItem{\textbf{AI Engineering: } Developing a modular Python application and progressively exposing its inference and analysis capabilities through \textbf{FastAPI}, with \textbf{PostgreSQL} and \textbf{Docker} planned for scalable data management and reproducible deployment.}
+\resumeItemListEnd
+
+\resumeSubheading{Jane Street Puzzle -- August 2026}{Aug. 2026}{Mathematics, Python, LLMs, Cursor}{}
+\resumeItemListStart
+\resumeItem{\textbf{AI-Assisted Reasoning: } Using multiple frontier LLMs and \textbf{Cursor} to explore mathematical approaches, generate code and challenge proposed solutions.}
+\resumeItem{\textbf{Computational Validation: } Developing Python simulations and visualizations to test mathematical intuitions and validate analytical results.}
+\resumeItemListEnd
+\resumeSubHeadingListEnd
+
+%-----------EXTRACURRICULAR ACTIVITIES-----------
+\section{Extracurricular Activities}
+    \resumeSubHeadingListStart
+      \resumeSubheading
+          {Gap Year – Independent Travel (Southeast Asia)}
+{Jan. 2024 -- Jan. 2025}
+          {Independent Travel }{Southeast Asia}
+          \resumeItemListStart
+            \resumeItem{Undertook a year of independent travel across Southeast Asia, gaining cross-cultural experience and adaptability while navigating diverse environments and logistical challenges.}
+            \resumeItem{Developed strong self-management, problem-solving, and communication skills through extended travel in countries including Thailand, Vietnam, Cambodia, Indonesia.}
+            \resumeItem{Exposure to different cultural, economic, and social contexts strengthened intercultural awareness and resilience.}
+          \resumeItemListEnd
+    \resumeSubHeadingListEnd
+
+%-----------SKILLS & INTERESTS-----------
+\section{Skills \& Interests}
+\begin{adjustwidth}{0.4cm}{}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{@{}>{\bfseries\raggedleft\arraybackslash}p{3.2cm} @{\hspace{0.4cm}} X@{}}
+Agentic AI: & LLM Applications, Agentic AI, LangGraph, Tool Calling, MCP, Multi-Agent Systems, Context Engineering, LangChain, LLM APIs \\
+RAG \& Evaluation: & RAG, Embeddings, Vector Search, Hybrid Search, Reranking, LLM Evaluation, Ragas, DeepEval, Observability \\
+AI Engineering: & Python, SQL, FastAPI, REST APIs, Docker, Git, CI/CD, AWS/GCP, Monitoring.\\
+ML \& Fine-Tuning: & PyTorch, Hugging Face, Transformers, LoRA/QLoRA, PEFT, Deep Learning, Data mining, Inference, Prediction \\
+Data: & Pandas, NumPy, Scikit-learn, Experiment Design, Statistical Testing \\
+Languages: & French, Arabic, English (fluent); Spanish (intermediate); Mandarin (elementary) \\
+\end{tabularx}
+
+\end{adjustwidth}
+%-------------------------------------------
+\end{document}

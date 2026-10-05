@@ -107,10 +107,28 @@ def request(url, params=None, headers=None, timeout=DEFAULT_TIMEOUT,
                           headers=dict(resp.headers))
     except urllib.error.HTTPError as exc:
         raw = exc.read() if hasattr(exc, "read") else b""
-        result.update(status=exc.code, body=raw,
-                      text=raw.decode("utf-8", "replace"),
+        text = raw.decode("utf-8", "replace")
+        # Keep the provider's own words in `error`, not just the status code.
+        # Every actionable diagnosis lives in that body - "Signature expired:
+        # 20261002T035705Z", "does not support /v1/chat/completions",
+        # "access_denied" - and "HTTP 401" throws all of it away. The body is
+        # pulled out of its JSON envelope so the message reads as prose rather
+        # than as a blob, and truncated so a 10KB error page cannot fill the
+        # ledger.
+        detail = text
+        try:
+            payload = json.loads(text)
+            err = payload.get("error") if isinstance(payload, dict) else None
+            if isinstance(err, dict):
+                detail = err.get("message") or err.get("code") or detail
+            elif isinstance(err, str):
+                detail = err
+        except ValueError:
+            pass
+        detail = " ".join(str(detail).split())[:400] or f"HTTP {exc.code}"
+        result.update(status=exc.code, body=raw, text=text,
                       headers=dict(exc.headers or {}),
-                      error=f"HTTP {exc.code}")
+                      error=f"HTTP {exc.code}: {detail}")
     except urllib.error.URLError as exc:
         result["error"] = f"network: {exc.reason}"
     except Exception as exc:                      # timeout, ssl, decode

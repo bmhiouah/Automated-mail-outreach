@@ -247,3 +247,57 @@ class TestRendering(unittest.TestCase):
         ctx = email_gen.build_context({}, {}, {})
         got = email_gen.empty_placeholders("{{my_pitch}} and {{my_pitch}}", ctx)
         self.assertEqual(got, ["my_pitch"])
+
+
+class TestMaskedReconstruction(unittest.TestCase):
+    """The two ways a reconstructed address can be wrong before it is sent.
+
+    Both were live in the data: 17 addresses were written with accents in the
+    local part (undeliverable), and firm rows carrying a stale domain silently
+    sent mail to a domain nobody uses.
+    """
+
+    def setUp(self):
+        db.ensure_schema()
+        before = db.resolve_company("Amundi")
+        self.orig_domain = (db.query("SELECT domain FROM companies WHERE id=?",
+                                     [before["id"]])[0] or {}).get("domain")
+        db.execute("UPDATE companies SET email_pattern='', pattern_confidence=0, "
+                   "pattern_source='', pattern_sample='', domain='stale.example' "
+                   "WHERE name='Amundi'")
+        self.co = db.resolve_company("Amundi")
+        self.cid = db.execute(
+            "INSERT INTO contacts (first_name,last_name,company_id,company_name,"
+            "email_masked) VALUES ('Anna','Zund',?,'Amundi','a*****@amundi.com')",
+            [self.co["id"]])
+
+    def tearDown(self):
+        db.execute("DELETE FROM contacts WHERE id=?", [self.cid])
+        db.execute("DELETE FROM pattern_evidence WHERE company_id=?", [self.co["id"]])
+        db.execute("UPDATE companies SET email_pattern='', pattern_confidence=0, "
+                   "pattern_source='', pattern_sample='', domain=? WHERE id=?",
+                   [self.orig_domain, self.co["id"]])
+
+    def test_the_observed_domain_beats_the_stale_firm_row(self):
+        """The masked address is what we actually saw; the row is bookkeeping."""
+        db.execute("UPDATE companies SET email_pattern='first.last', "
+                   "pattern_confidence=0.9 WHERE id=?", [self.co["id"]])
+        email_pattern.apply_masked(self.co["id"])
+        row = db.query("SELECT email FROM contacts WHERE id=?", [self.cid])[0]
+        self.assertEqual(row["email"], "anna.zund@amundi.com")
+
+    def test_an_accent_never_reaches_the_local_part(self):
+        """'czund@bamfunds.com' is an address; 'czünd@...' is a bounce."""
+        self.assertEqual(
+            email_pattern.reconstruct("Christian", "Zünd",
+                                      {"domain": "bamfunds.com",
+                                       "email_pattern": "flast"}),
+            "czund@bamfunds.com")
+        self.assertTrue(email_pattern.reconstruct(
+            "Dorothée", "Freymann",
+            {"domain": "socgen.com", "email_pattern": "first.last"}).isascii())
+
+    def test_names_without_accents_are_untouched(self):
+        """Folding must be a no-op for the 99% of names that are already ASCII."""
+        self.assertEqual(email_pattern._alpha("Smith"), "smith")
+        self.assertEqual(email_pattern._fold("Zünd"), "zund")

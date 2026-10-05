@@ -150,8 +150,27 @@
   </section>
 
   <!-- CONTACTS -->
+  <!-- The directory first: this tab is for finding people, and entering them
+       is the rarer job, so the three ways to add sit below the list. -->
   <section id="tab-contacts" class="hide">
     <div class="card">
+      <h2>Contacts</h2>
+      <div class="row">
+        <input id="kq" placeholder="Search name, company, title" style="width:240px">
+        <button class="ghost sm" onclick="loadContacts()">Apply</button>
+        <button class="ghost sm" onclick="applyGuesses()">Fill empty emails from patterns</button>
+        <button class="ghost sm" onclick="retag()">Auto-tag desk &amp; seniority</button>
+        <a class="ghost sm" href="/api/export/contacts" target="_blank" style="text-decoration:none">Export CSV</a>
+        <span class="muted" id="kcount"></span>
+      </div>
+      <div class="scroll"><table id="ktable"></table></div>
+    </div>
+    <div class="row" style="margin:22px 0 10px">
+      <h2 style="margin:0">Add people</h2>
+      <span class="muted">&mdash; one at a time, pasted, or from a file</span>
+    </div>
+
+<div class="card">
       <h2>Add a contact</h2>
       <div class="row">
         <input id="k-first" placeholder="First name" style="width:130px">
@@ -164,7 +183,7 @@
         <button class="act" onclick="addContact()">Add</button>
       </div>
     </div>
-    <div class="card">
+<div class="card">
       <h2>Paste people <span class="muted">— any shape</span></h2>
       <div class="hint">
         Copy a block of LinkedIn search results, a firm's team page, a spreadsheet
@@ -188,7 +207,7 @@
         <div id="pp-unparsed"></div>
       </div>
     </div>
-    <div class="card">
+<div class="card">
       <h2>Paste-import contacts (CSV or tab-separated)</h2>
       <div class="row">
         <textarea id="import-text" rows="4" placeholder="first,last,title,company,email,linkedin"></textarea>
@@ -201,18 +220,6 @@
         <span class="muted" id="import-result"></span>
       </div>
       <div class="hint">Strict columns only. Header names recognised: first name, last name, job title, company, email, linkedin, city, hook, notes, source. Duplicates on name+company are updated, not duplicated.</div>
-    </div>
-    <div class="card">
-      <h2>Contacts</h2>
-      <div class="row">
-        <input id="kq" placeholder="Search name, company, title" style="width:240px">
-        <button class="ghost sm" onclick="loadContacts()">Apply</button>
-        <button class="ghost sm" onclick="applyGuesses()">Fill empty emails from patterns</button>
-        <button class="ghost sm" onclick="retag()">Auto-tag desk &amp; seniority</button>
-        <a class="ghost sm" href="/api/export/contacts" target="_blank" style="text-decoration:none">Export CSV</a>
-        <span class="muted" id="kcount"></span>
-      </div>
-      <div class="scroll"><table id="ktable"></table></div>
     </div>
   </section>
 
@@ -344,34 +351,87 @@
   <!-- CVS -->
   <section id="tab-cvs" class="hide">
     <div class="card">
-      <h2>Your base CV <span class="muted" id="cv-base-info"></span></h2>
-      <div class="hint">The base document lives in <b>My profile</b> and is never overwritten by a
-        variant. Tailoring below reads it and produces a separate, reviewable variant — so a
-        bad adaptation costs one click, not a rewrite.</div>
+      <h2>Tailor <code>main.tex</code> <span class="muted" id="tex-meta"></span></h2>
+      <div class="hint">Write the instruction once and keep it. Each run reads your base LaTeX CV,
+        applies it for one firm and role, then compiles the result to a <b>PDF</b> — and only a PDF
+        can be attached to a mail. <b>main.tex</b> itself is never written to.</div>
+      <div class="row">
+        <select id="tex-firm" style="min-width:200px"></select>
+        <input id="tex-role" placeholder="Target role (e.g. Quantitative Researcher)"
+               style="flex:1;min-width:200px">
+        <input id="tex-name" placeholder="Name this variant" style="flex:1;min-width:180px">
+        <select id="tex-model" title="Which model tailors this CV"
+                style="min-width:200px"></select>
+      </div>
+      <textarea id="tex-instruction" rows="8"
+        placeholder="How should this CV be changed? e.g. lead with the derivatives risk work, drop the teaching section, make the summary specific to systematic macro."></textarea>
+      <div class="row" style="margin-top:10px">
+        <button class="act" onclick="generateLatexCv(this)">Generate &amp; compile</button>
+        <button class="ghost" onclick="saveCvInstruction()">Save instruction</button>
+        <button class="ghost" onclick="resetCvInstruction()">Reset to default</button>
+        <span class="muted" id="tex-status"></span>
+      </div>
+      <div id="tex-result"></div>
+      <div class="row" style="margin-top:12px">
+        <span class="muted" id="tex-preview-label">No PDF yet — generate one above, or view the base.</span>
+        <button class="ghost sm" onclick="previewBaseCv()">View the base</button>
+        <button class="ghost sm" onclick="compileCurrentCv()">Recompile</button>
+        <button class="ghost sm" onclick="previewCurrentCv()">Preview</button>
+        <a class="ghost sm" id="tex-open" href="#" target="_blank" rel="noopener"
+           style="display:none">Open PDF</a>
+      </div>
+      <iframe id="tex-preview" title="CV preview"
+        style="display:none;width:100%;height:660px;border:1px solid #444;
+               border-radius:8px;background:#fff;margin-top:10px"></iframe>
+    </div>
+    <div class="card">
+      <h2>Review a variant</h2>
+      <div class="hint">Click a row in the list below, or paste a CV you wrote by hand. Only a
+        <b>validated</b> variant with a compiled PDF can be attached to a queued mail. The base
+        <b>main.tex</b> is never touched — a bad adaptation costs one click, not a rewrite.</div>
       <div class="row">
         <select id="cv-firm" onchange="loadCvs()"></select>
-        <input id="cv-role" placeholder="Target role (e.g. Quantitative Researcher)" style="flex:1;min-width:220px">
-        <button class="act" onclick="proposeCv()">Propose a tailored CV</button>
-        <button class="ghost" onclick="openBaseCv()">Edit the base CV</button>
       </div>
       <div id="cv-propose-result"></div>
     </div>
     <div class="card">
       <h2>Variants</h2>
+      <div class="row">
+        <input id="cv-search" placeholder="Search name, firm, role…" style="flex:1;min-width:160px"
+               oninput="loadCvs()">
+        <select id="cv-filter-firm" onchange="loadCvs()" style="min-width:180px"></select>
+        <select id="cv-filter-status" onchange="loadCvs()" style="min-width:140px">
+          <option value="">any status</option>
+          <option value="pending">pending</option>
+          <option value="validated">validated</option>
+          <option value="rejected">rejected</option>
+        </select>
+      </div>
       <div class="scroll" style="max-height:260px"><table id="cv-table"></table></div>
       <div class="hint">A variant must be <b>validated</b> before it can be attached to a queued
         mail. That gate is why an unreviewed document can never go out with your name on it.</div>
     </div>
     <div class="card">
       <h2 id="cv-edit-title">A variant</h2>
+      <div class="hint">Text edits apply to the words; the LaTeX tab below is the layout.
+        Saving here rebuilds the PDF when the source changed - what you preview
+        afterwards is what mail would attach.</div>
       <div class="row">
         <input id="cv-name" placeholder="Name this variant" style="flex:1;min-width:240px">
         <button class="ghost" onclick="saveCv()">Save</button>
         <button class="act" onclick="reviewCv('validated')">Validate</button>
         <button class="ghost" onclick="reviewCv('rejected')">Reject</button>
       </div>
+      <div class="row" style="margin-top:8px">
+        <button class="ghost sm" id="cv-tab-text" onclick="setCvEditor('text')">Words</button>
+        <button class="ghost sm" id="cv-tab-latex" onclick="setCvEditor('latex')">LaTeX source</button>
+        <span class="muted" id="cv-editor-hint"></span>
+      </div>
       <textarea id="cv-body" rows="20" placeholder="Select a variant above, or paste one here and press New."></textarea>
+      <textarea id="cv-latex" rows="20" class="hide" spellcheck="false"
+        placeholder="The LaTeX source of this variant. Saving rebuilds its PDF."></textarea>
       <div class="row" style="margin-top:10px">
+        <button class="ghost" onclick="compileCurrentCv()">Recompile PDF</button>
         <button class="ghost" onclick="newCv()">New from scratch</button>
         <span class="muted" id="cv-saved"></span>
       </div>

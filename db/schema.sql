@@ -272,6 +272,10 @@ CREATE TABLE IF NOT EXISTS profile (
   availability  TEXT,
   pitch         TEXT,
   cv_text       TEXT,
+  -- The standing instruction for tailoring main.tex. Saved rather than retyped
+  -- because it is the actual specification of what you want changed, and the
+  -- same wording is what makes two variants comparable.
+  cv_instruction TEXT,
   updated_at    TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -363,6 +367,14 @@ CREATE TABLE IF NOT EXISTS cv_variants (
   contact_id   INTEGER REFERENCES contacts(id) ON DELETE SET NULL,
   role_target  TEXT,
   generation   TEXT,                       -- llm:<model> | manual
+  -- The LaTeX branch. `body` stays the plain-text rendering of whatever the
+  -- document says, because that is what the queue scores and what a reader
+  -- sees; `latex` is the source a PDF is compiled from. Only a PDF can be
+  -- attached to a mail, so `pdf_path` is what makes a variant sendable at all.
+  latex        TEXT,
+  pdf_path     TEXT,                       -- data/cvs/<slug>.pdf, project-relative
+  pdf_at       TEXT,                       -- when it last compiled successfully
+  instruction  TEXT,                       -- the instruction that produced it
   -- pending  -> proposed by the model, never reviewed
   -- validated-> you accepted it; may now be attached to a queued mail
   -- rejected -> you threw it away. Kept for the same reason cancelled mails are.

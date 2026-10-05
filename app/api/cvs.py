@@ -19,15 +19,20 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+import os
 import db                       # noqa: E402
 import llm                      # noqa: E402
-from domain import get_profile, now_iso   # noqa: E402
+import latex_cv                 # noqa: E402
+import latex_build              # noqa: E402
+from domain import get_profile, now_iso, Raw  # noqa: E402
 
 # What a client may set by hand. `status` is not here on purpose: validation is a
 # decision the user makes through api_cv_review, not a field the UI can flip while
-# saving an edit.
-CV_FIELDS = ["name", "body", "parent_id", "company_id", "contact_id", "role_target",
-             "notes"]
+# saving an edit. `latex` is here so the LaTeX editor can save the source; when
+# it changes, the compiled PDF is immediately rebuilt so the preview shows what
+# was just written, not what used to be there.
+CV_FIELDS = ["name", "body", "latex", "parent_id", "company_id", "contact_id",
+             "role_target", "notes"]
 
 
 def base_cv():
@@ -65,6 +70,7 @@ def api_cv_list(params):
     rows = db.query(
         "SELECT v.id, v.name, v.status, v.generation, v.role_target, v.edited, "
         "v.company_id, v.contact_id, v.parent_id, v.created_at, v.reviewed_at, "
+        "v.pdf_path, v.pdf_at, length(v.latex) AS latex_bytes, "
         "co.name AS firm, c.first_name, c.last_name, "
         "length(v.body) AS bytes, "
         "(SELECT COUNT(*) FROM mail_queue q WHERE q.cv_id=v.id) AS used_by "
@@ -72,11 +78,22 @@ def api_cv_list(params):
         "LEFT JOIN companies co ON co.id=v.company_id "
         "LEFT JOIN contacts c ON c.id=v.contact_id "
         "ORDER BY v.status='pending' DESC, v.created_at DESC")
-    return {"variants": rows, "base_bytes": len(base_cv()),
+    fresh = [_base_variant()] + [dict(r) for r in rows]
+    for v in fresh:
+        v["stale"] = (not v.get("pdf_path")) or not latex_build.pdf_exists(
+            v.get("pdf_path"))
+    return {"variants": fresh, "base_bytes": len(base_cv()),
             "base_present": bool(base_cv())}
 
 
 def api_cv_get(payload):
+    if payload.get("id") == 0:
+        # The base CV is not stored as a variant: it IS main.tex. Anything the
+        # UI shows for it (LaTeX editor, compiled PDF) is read or built live.
+        v = _base_variant()
+        v["stale"] = (not v.get("pdf_path")) or not latex_build.pdf_exists(
+            v.get("pdf_path"))
+        return v
     rows = db.query("SELECT * FROM cv_variants WHERE id=?", [payload.get("id")])
     if not rows:
         return {"error": "that CV variant no longer exists"}
@@ -84,6 +101,10 @@ def api_cv_get(payload):
     if v.get("company_id"):
         co = db.query("SELECT name FROM companies WHERE id=?", [v["company_id"]])
         v["firm"] = co[0]["name"] if co else ""
+    if v.get("pdf_path"):
+        v["pdf_url"] = _pdf_url(v)
+    v["stale"] = (not v.get("pdf_path")) or not latex_build.pdf_exists(
+        v.get("pdf_path"))
     return v
 
 
@@ -119,11 +140,17 @@ def api_cv_propose(payload):
 
 
 def api_cv_save(payload):
-    """Write your own edits to a variant. Marks it edited, not validated."""
+    """Write your own edits to a variant. Marks it edited, not validated.
+
+    When the LaTeX source changed, the PDF is rebuilt immediately: the preview
+    must show what was just written, not what used to be there. A failed build
+    does not undo the text edit - the words are yours, the layout is what broke.
+    """
     vid = payload.get("id")
     rows = db.query("SELECT * FROM cv_variants WHERE id=?", [vid])
     if not rows:
         return {"error": "that CV variant no longer exists"}
+    before = dict(rows[0])
     sets, args = [], []
     for f in CV_FIELDS:
         if f in payload:
@@ -135,7 +162,13 @@ def api_cv_save(payload):
     sets.append("updated_at=?")
     args.extend([now_iso(), vid])
     db.execute(f"UPDATE cv_variants SET {', '.join(sets)} WHERE id=?", args)
-    return api_cv_get({"id": vid})
+    out = {"variant": api_cv_get({"id": vid})}
+    if "latex" in payload and (payload["latex"] or "") != (before.get("latex") or ""):
+        compiled = compile_variant(vid)
+        out["compiled"] = compiled
+        out["variant"] = api_cv_get({"id": vid})
+        out["pdf_url"] = _pdf_url(out["variant"])
+    return out
 
 
 def api_cv_review(payload):
@@ -155,24 +188,249 @@ def api_cv_review(payload):
 
 
 def api_cv_create(payload):
-    """Start a variant by hand, e.g. by pasting a CV you tailored elsewhere."""
+    """Start a variant by hand, e.g. by pasting a CV you tailored elsewhere.
+
+    A pasted LaTeX source is compiled at once: the list and the preview stay in
+    agreement instead of describing a document that was never built. `latex`
+    wins over `body` when both are given, because the source is what mail must
+    render.
+    """
     name = (payload.get("name") or "").strip()
     if not name:
         return {"error": "give the variant a name so you can tell them apart"}
     company, contact = _company_for(payload.get("contact_id"), payload.get("company_id"))
+    latex = (payload.get("latex") or "").strip()
+    body = (payload.get("body") or "").strip() or (_text_of(latex) if latex else "")
     new_id = db.execute(
-        "INSERT INTO cv_variants (name, body, company_id, contact_id, role_target, "
-        "generation, status, edited, updated_at) VALUES (?,?,?,?,?,'manual',?,1,?)",
-        [name, payload.get("body") or "", company.get("id"), contact.get("id"),
+        "INSERT INTO cv_variants (name, body, latex, company_id, contact_id, role_target, "
+        "generation, status, edited, updated_at) VALUES (?,?,?,?,?,?,'manual',?,1,?)",
+        [name, body, latex or "", company.get("id"), contact.get("id"),
          payload.get("role_target") or "",
          "validated" if payload.get("validated") else "pending", now_iso()])
-    return db.query("SELECT * FROM cv_variants WHERE id=?", [new_id])[0]
+    row = db.query("SELECT * FROM cv_variants WHERE id=?", [new_id])[0]
+    if not latex:
+        return row
+    compiled = compile_variant(new_id)
+    row = db.query("SELECT * FROM cv_variants WHERE id=?", [new_id])[0]
+    row["pdf_url"] = _pdf_url(row)
+    row["compiled"] = compiled
+    return row
+
+
+DEFAULT_INSTRUCTION = (
+    "Keep every qualification, date, employer and number exactly as they are - "
+    "never invent or drop anything. Reorder and re-weight the document so the "
+    "most relevant material comes first for this firm and role, trim sections "
+    "that do not help, and make the summary at the top specific to them."
+)
+
+
+def api_cv_instruction(params):
+    """The standing instruction, and whether the two things it needs are there."""
+    prof = get_profile()
+    saved = (prof.get("cv_instruction") or "").strip()
+    engine = latex_build.engine()
+    return {
+        "instruction": saved or DEFAULT_INSTRUCTION,
+        "saved": bool(saved),
+        "default": DEFAULT_INSTRUCTION,
+        "base_tex_present": bool(latex_build.base_tex()),
+        "base_tex_path": os.path.relpath(latex_build.base_tex_path(), latex_build.BASE),
+        "engine_ok": bool(engine),
+        "engine": engine or "",
+    }
+
+
+def api_cv_instruction_save(payload):
+    """Remember the wording. It is the spec, not a comment - it should survive.
+
+    A body that does not carry the field at all is refused rather than written:
+    clearing the box deliberately sends `instruction: ""`, but a stray empty
+    POST should not be able to wipe the specification you spent time on.
+    """
+    if "instruction" not in (payload or {}):
+        return {"error": "no instruction given"}
+    text = (payload.get("instruction") or "").strip()
+    db.execute("UPDATE profile SET cv_instruction=?, updated_at=CURRENT_TIMESTAMP "
+               "WHERE id=1", [text])
+    return {"ok": True, "instruction": text}
+
+
+def _text_of(tex):
+    """The plain text a compiled document says, for scoring and for reading."""
+    try:
+        return latex_cv.latex_to_text(tex)
+    except Exception:
+        # The PDF is the deliverable; a conversion failure must not lose it.
+        return tex
+
+
+def _pdf_url(variant):
+    return f"/api/cvs/pdf/{variant['id']}" if (variant or {}).get("pdf_path") else ""
+
+
+def compile_variant(vid):
+    """Compile one variant's LaTeX. Failure is reported, never raised.
+
+    A previous PDF is left alone on failure: it still corresponds to the LaTeX
+    that produced it, and quietly deleting it would turn one bad edit into an
+    unsendable variant. `stale` says the preview no longer matches the source.
+    """
+    rows = db.query("SELECT * FROM cv_variants WHERE id=?", [vid])
+    if not rows:
+        return {"ok": False, "error": "that CV variant no longer exists"}
+    v = dict(rows[0])
+    if not (v.get("latex") or "").strip():
+        return {"ok": False, "error": "this variant has no LaTeX source - it was "
+                                      "pasted as text, so there is nothing to compile"}
+    res = latex_build.compile_latex(v["latex"], f"cv-{vid}")
+    if res.get("ok"):
+        db.execute("UPDATE cv_variants SET pdf_path=?, pdf_at=?, updated_at=? WHERE id=?",
+                   [res["pdf"], now_iso(), now_iso(), vid])
+        res["variant_id"] = vid
+        return res
+    res["variant_id"] = vid
+    res["kept_previous"] = bool(v.get("pdf_path"))
+    res["stale"] = bool(v.get("pdf_path"))
+    return res
+
+
+def api_cv_latex_propose(payload):
+    """main.tex + your instruction -> a new variant, compiled to a PDF.
+
+    The base document is read fresh and never written; the variant carries the
+    LaTeX, the plain-text rendering of it, and the instruction that produced it,
+    so a CV can be re-derived rather than remembered.
+    """
+    base = latex_build.base_tex()
+    if not base.strip():
+        return {"error": "no base LaTeX CV found - expected "
+                         f"{os.path.relpath(latex_build.base_tex_path(), latex_build.BASE)} "
+                         "in the project root"}
+    # Something to tailor FOR. This is not just a guard: an empty POST would
+    # otherwise spend a real model call to produce a CV for no one, which is
+    # also why "an empty body must be a JSON error, never a 500" holds here.
+    if not (payload.get("company_id") or payload.get("contact_id")
+            or (payload.get("role_target") or "").strip()):
+        return {"error": "choose a firm or give a target role before generating"}
+    if not latex_build.engine():
+        return {"error": "no TeX engine found - install MacTeX/TeX Live, or set "
+                         "cv.engine in config.json"}
+    if not llm.is_configured():
+        return {"error": "no LLM API key configured - drafting cannot start"}
+
+    company, contact = _company_for(payload.get("contact_id"), payload.get("company_id"))
+    role = (payload.get("role_target") or "").strip()
+    instruction = (payload.get("instruction") or "").strip() or DEFAULT_INSTRUCTION
+
+    out = llm.generate_cv_latex(contact, company, get_profile(), base, instruction,
+                                role_target=role,
+                                force=bool(payload.get("force")),
+                                model=(payload.get("model") or None))
+    if not out.get("ok"):
+        return {"error": out.get("error") or "the tailoring failed",
+                "model": out.get("model"), "tokens": out.get("tokens") or 0}
+
+    tex = latex_build.ensure_document(out.get("body") or "", base)
+    if not tex.strip():
+        return {"error": "the model returned neither a complete document nor a "
+                         "body I can attach to main.tex - try again"}
+
+    name = (payload.get("name") or _variant_name(company, role)).strip()
+    new_id = db.execute(
+        "INSERT INTO cv_variants (name, body, latex, parent_id, company_id, "
+        "contact_id, role_target, generation, instruction, status, updated_at) "
+        "VALUES (?,?,?,?,?,?,?,?,?,'pending',?)",
+        [name, _text_of(tex), tex, payload.get("parent_id"), company.get("id"),
+         contact.get("id"), role, f"llm:{out.get('model') or ''}",
+         instruction, now_iso()])
+    compiled = compile_variant(new_id)
+    variant = db.query("SELECT * FROM cv_variants WHERE id=?", [new_id])[0]
+    return {"variant": variant, "compiled": compiled,
+            "cached": bool(out.get("cached")), "tokens": out.get("tokens") or 0,
+            "pdf_url": _pdf_url(variant),
+            "note": "proposed, not applied - review it, then Validate to allow it "
+                    "on a mail"}
+
+
+def api_cv_compile(payload):
+    """Recompile a variant, e.g. after editing its LaTeX by hand."""
+    vid = payload.get("id")
+    out = compile_variant(vid)
+    row = db.query("SELECT * FROM cv_variants WHERE id=?", [vid])
+    return dict(out, variant=(row[0] if row else None),
+                pdf_url=(_pdf_url(row[0]) if row else ""))
+
+
+def api_cv_pdf(vid):
+    """The compiled PDF as bytes. An iframe can display plain text on failure."""
+    if vid in (0, "0"):
+        return api_cv_base_pdf({})
+    rows = db.query("SELECT pdf_path, name FROM cv_variants WHERE id=?", [vid])
+    if not rows:
+        return Raw(b"unknown CV variant", "text/plain; charset=utf-8")
+    data = latex_build.pdf_bytes(rows[0]["pdf_path"])
+    if not data:
+        return Raw(b"No PDF for this variant yet - press Compile.",
+                   "text/plain; charset=utf-8")
+    fname = latex_build.slugify(rows[0]["name"]) + ".pdf"
+    return Raw(data, "application/pdf",
+               {"Content-Disposition": f'inline; filename="{fname}"'})
+
+
+def api_cv_base_pdf(params):
+    """The base document, compiled on demand. Never stored: it is the source."""
+    base = latex_build.base_tex()
+    if not base.strip():
+        return Raw(b"main.tex is missing - nothing to show.",
+                   "text/plain; charset=utf-8")
+    res = latex_build.compile_latex(base, "main")
+    if not res.get("ok"):
+        return Raw(("main.tex does not compile:\n\n" + (res.get("error") or "")
+                    ).encode("utf-8"), "text/plain; charset=utf-8")
+    data = latex_build.pdf_bytes(res["pdf"])
+    if not data:
+        return Raw(b"Compiled, but the PDF could not be read back.",
+                   "text/plain; charset=utf-8")
+    return Raw(data, "application/pdf",
+               {"Content-Disposition": 'inline; filename="main.pdf"'})
+
+
+def _base_variant():
+    """The base CV, shaped like a variant row so the UI can show it anywhere.
+
+    Always id 0, always 'made by you', always compiled on demand. The mail gate
+    needs (validated, compiled) before anything can be attached, so the base is
+    offered as already approved - the compile step is what makes it sendable.
+    This dict is built live from main.tex: main.tex is never itself written to,
+    which is the whole reason a bad run costs nothing.
+    """
+    base = latex_build.base_tex()
+    return {"id": 0, "name": "Base CV (main.tex)", "body": _text_of(base),
+            "latex": base, "status": "validated", "generation": "you",
+            "role_target": "", "firm": "", "first_name": "", "last_name": "",
+            "company_id": None, "contact_id": None, "parent_id": None,
+            "pdf_path": "data/cvs/main.pdf", "stale": not latex_build.pdf_exists(
+                "data/cvs/main.pdf"), "pdf_url": "/api/cvs/base-pdf"}
+
+
+def api_cv_base_compile(payload):
+    """Compile main.tex itself, after it was edited by hand elsewhere."""
+    res = latex_build.compile_latex(latex_build.base_tex(), "main")
+    return dict(res, variant=_base_variant(), pdf_url="/api/cvs/base-pdf")
 
 
 ROUTES = [
     ("GET", "cvs", lambda p, rest, body: api_cv_list(p)),
+    ("GET", "cvs/base-pdf", lambda p, rest, body: api_cv_base_pdf(p)),
+    ("GET", "cvs/instruction", lambda p, rest, body: api_cv_instruction(p)),
+    ("GET", "cvs/pdf/<id>", lambda p, rest, body: api_cv_pdf(rest[0])),
+    ("POST", "cvs/instruction", lambda p, rest, body: api_cv_instruction_save(body)),
     ("POST", "cvs/get", lambda p, rest, body: api_cv_get(body)),
     ("POST", "cvs/propose", lambda p, rest, body: api_cv_propose(body)),
+    ("POST", "cvs/latex-propose", lambda p, rest, body: api_cv_latex_propose(body)),
+    ("POST", "cvs/compile", lambda p, rest, body: api_cv_compile(body)),
+    ("POST", "cvs/base-compile", lambda p, rest, body: api_cv_base_compile(body)),
     ("POST", "cvs/create", lambda p, rest, body: api_cv_create(body)),
     ("POST", "cvs/save", lambda p, rest, body: api_cv_save(body)),
     ("POST", "cvs/review", lambda p, rest, body: api_cv_review(body)),

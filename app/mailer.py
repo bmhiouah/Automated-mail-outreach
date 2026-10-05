@@ -104,12 +104,17 @@ def sent_today():
                     [date.today().isoformat()])[0]["n"]
 
 
-def build_message(to_addr, subject, body, cv_filename=None, cv_text=None):
+def build_message(to_addr, subject, body, cv_filename=None, cv_text=None,
+                  cv_pdf=None):
     """The exact MIME message that would be sent.
 
     Built in dry mode too, deliberately: the message is the artefact under review
     as much as the text in the textarea, and a sender line with a stray newline
     is only discoverable by looking at the real thing.
+
+    `cv_pdf` wins over `cv_text`: a CV goes out as a PDF, because that is what
+    opens everywhere with the layout intact. The text attachment only remains
+    for a variant that was never compiled.
     """
     cfg = config()
     msg = EmailMessage()
@@ -120,17 +125,28 @@ def build_message(to_addr, subject, body, cv_filename=None, cv_text=None):
     msg["Date"] = formatdate(localtime=True)
     msg["Message-ID"] = make_msgid(domain="cold-approach.local")
     msg.set_content(body or "")
-    if cv_filename and cv_text:
+    if cv_pdf:
+        name = cv_filename or "cv.pdf"
+        if not name.lower().endswith(".pdf"):
+            name = os.path.splitext(name)[0] + ".pdf"
+        msg.add_attachment(cv_pdf, maintype="application", subtype="pdf",
+                           filename=name)
+    elif cv_filename and cv_text:
         msg.add_attachment(cv_text.encode("utf-8"), maintype="text",
                            subtype="plain", filename=cv_filename)
     return msg
 
 
-def preflight(to_addr, subject, body, addr_kind="none", confirm_pattern=False):
+def preflight(to_addr, subject, body, addr_kind="none", confirm_pattern=False,
+              cv_attached=False, cv_has_pdf=False):
     """Everything that must be true before a send. Returns a list of problems.
 
     Refusing here rather than after a partial send is the whole design: a bounce
     you cannot see is worse than a message you were told not to send.
+
+    `cv_attached` means a CV was chosen for this mail; `cv_has_pdf` says it has
+    something compilable to send. A CV that exists only as text cannot go out,
+    so it is refused here rather than silently dropped from the message.
     """
     problems = []
     addr = (to_addr or "").strip()
@@ -150,6 +166,9 @@ def preflight(to_addr, subject, body, addr_kind="none", confirm_pattern=False):
                         "verified - confirm it explicitly before sending")
     if addr_kind == "none" and addr:
         problems.append("no verified address for this contact")
+    if cv_attached and not cv_has_pdf:
+        problems.append("the selected CV has no PDF yet - compile it first "
+                        "(only a PDF can be attached to a mail)")
     cap = config()["daily_cap"]
     if sent_today() >= cap:
         problems.append(f"daily cap reached ({cap} sent today) - raise mail.daily_cap "
@@ -158,7 +177,7 @@ def preflight(to_addr, subject, body, addr_kind="none", confirm_pattern=False):
 
 
 def send(to_addr, subject, body, addr_kind="none", confirm_pattern=False,
-         cv_filename=None, cv_text=None):
+         cv_filename=None, cv_text=None, cv_pdf=None, cv_attached=False):
     """Attempt one send. Returns {ok, sent, message_id, error, dry}.
 
     `sent=True` means a real SMTP server accepted the message. `dry=True` means
@@ -167,7 +186,8 @@ def send(to_addr, subject, body, addr_kind="none", confirm_pattern=False,
     not write a touchpoint.
     """
     cfg = config()
-    problems = preflight(to_addr, subject, body, addr_kind, confirm_pattern)
+    problems = preflight(to_addr, subject, body, addr_kind, confirm_pattern,
+                         cv_attached=cv_attached, cv_has_pdf=bool(cv_pdf))
     if problems:
         return {"ok": False, "sent": False, "error": "; ".join(problems)}
 
@@ -180,7 +200,7 @@ def send(to_addr, subject, body, addr_kind="none", confirm_pattern=False,
         return {"ok": False, "sent": False,
                 "error": "send_mode is live but no SMTP credentials are configured"}
 
-    msg = build_message(to_addr, subject, body, cv_filename, cv_text)
+    msg = build_message(to_addr, subject, body, cv_filename, cv_text, cv_pdf)
     try:
         if cfg["smtp_ssl"]:
             server = smtplib.SMTP_SSL(cfg["smtp_host"], cfg["smtp_port"], timeout=30)

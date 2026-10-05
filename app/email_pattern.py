@@ -24,10 +24,27 @@ every person at that firm.
 """
 import sys
 import os
+import unicodedata
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import db  # noqa: E402
+
+# Characters Unicode will not decompose on its own, so they are folded by hand.
+_FOLD = {"ø": "o", "œ": "oe", "æ": "ae", "ß": "ss", "ł": "l", "đ": "d",
+         "ð": "d", "þ": "th", "ı": "i", "ŧ": "t"}
+
+
+def _fold(s):
+    """ASCII-fold a name: 'Zünd' -> 'zund'.
+
+    The local part of an SMTP address is ASCII. 'czünd@bamfunds.com' is not a
+    deliverable address, it is a bounce with extra steps - so every name is
+    folded before it is ever turned into one.
+    """
+    t = unicodedata.normalize("NFKD", s or "")
+    t = "".join(ch for ch in t if not unicodedata.combining(ch))
+    return "".join(_FOLD.get(ch, ch) for ch in t.lower())
 
 PATTERNS = {
     "first.last": lambda f, l: f"{f}.{l}",
@@ -43,9 +60,35 @@ PATTERNS = {
     "first": lambda f, l: f,
 }
 
+# Firms whose convention we could not learn from your data because you hold no
+# verified address there - only a masked one. Rather than leave those people
+# unreachable, the convention was looked up on the public email-format
+# directories (LeadIQ), keyed by the domain taken from the masked address
+# itself, which is observed fact rather than inference.
+#
+# `confidence` is that directory's own stated share for this pattern, so it is
+# honest about "68% flast, 27% first.last" firms. Everything stored through
+# this table keeps email_source='pattern', so the mailer still refuses to send
+# it without an explicit confirmation.
+RESEARCHED = {
+    # domain            (pattern,      conf, example)
+    "qube-rt.com":          ("first.last", 0.97, "John.Doe@qube-rt.com"),
+    "bamfunds.com":         ("flast",      0.68, "JDoe@bamfunds.com"),
+    "bnpparibas-am.com":    ("first.last", 0.96, "John.Doe@bnpparibas.com"),
+    "columbiathreadneedle.com": ("first.last", 0.96, "John.Doe@columbiathreadneedle.com"),
+    "veritionfund.com":     ("flast",      0.74, "JDoe@veritionfund.com"),
+    "squarepoint-capital.com": ("first.last", 0.97, "John.Doe@squarepoint-capital.com"),
+    "bluebay.com":          ("flast",      0.95, "JDoe@bluebay.com"),
+    "pharo.com":            ("flast",      0.77, "JDoe@pharo.com"),
+    "statestreet.com":      ("flast",      0.89, "JDoe@statestreet.com"),
+    "apollo.com":           ("flast",      0.93, "JDoe@apollo.com"),
+}
+
+RESEARCH_SOURCE = "leadiq public email-format page"
+
 
 def _alpha(s):
-    return "".join(ch for ch in (s or "").strip().lower() if ch.isalpha())
+    return "".join(ch for ch in _fold((s or "").strip()) if ch.isalpha())
 
 
 def clean_domain(domain):
@@ -327,23 +370,247 @@ def patterns_for_company(company_id):
     return out
 
 
-def _mask_admits(local, mask_local):
-    """Could this candidate local part be the one behind a Prospeo mask?
+def _mask_exact(local, mask_local):
+    """The strict reading of a mask: every visible character must match.
 
-    's********' shows one real letter then stars: the candidate must start
-    with that letter and have the same length. When the mask length looks
-    truncated we do not reject on length - a masked address is a hint, and an
-    over-strict check would leave people addressless.
+    There is deliberately no length check. `_mask_admits` measured 417 length
+    disagreements against 13 agreements, so a length test here would reject
+    correct conventions almost always and teach the wrong lesson. All that is
+    left is the visible prefix - which is why `pattern_from_masked` below refuses
+    to establish a convention from masks at all.
     """
     if not mask_local:
         return True
     vis = mask_local.replace("*", "")
-    if vis and not local.lower().startswith(vis.lower()):
-        return False
-    stars = mask_local.count("*")
-    if stars and stars <= 6 and len(local) != len(mask_local):
-        return False        # short masks are usually faithful to the length
-    return True
+    return not vis or local.lower().startswith(vis.lower())
+
+
+def pattern_from_masked(people):
+    """Infer a firm's convention from its masked addresses alone.
+
+    `people` is a list of (first, last, masked_local). Returns
+    (pattern, confidence, n_agreeing) or None.
+
+    Two rules keep this honest, and they are why it refuses so much:
+
+    * **One pattern must explain EVERY masked address at the firm.** A pattern that
+      fits some of them is a coincidence, not a convention.
+    * **Several patterns agreeing means we do not know.** With no ground-truth
+      address anywhere, ambiguity cannot be resolved by preference - only by
+      refusing. The length check does most of the work and we cannot prove the
+      mask preserves length, so uniqueness is the safety net: if length were
+      noise, most firms come out ambiguous and are left alone.
+
+    Confidence scales with how many independent people agree. One sample lands at
+    0.5, below the project's 0.6 line, so it is never stored as a firm convention.
+    """
+    usable = [(f, l, m) for f, l, m in people if _alpha(f) and _alpha(l) and m]
+    if not usable:
+        return None
+    winners = []
+    for pattern, fn in PATTERNS.items():
+        if all(_mask_exact(fn(_alpha(f), _alpha(l)) or "", m) for f, l, m in usable):
+            winners.append(pattern)
+    if len(winners) != 1:
+        return None                      # no fit, or several: refuse, do not guess
+    pattern = winners[0]
+    n = len(usable)
+    return pattern, (0.9 if n >= 3 else (0.75 if n == 2 else 0.5)), n
+
+
+def _masked_people(company_id):
+    """(first, last, masked_local) for everyone at a firm we hold only masked."""
+    rows = db.query(
+        "SELECT c.first_name, c.last_name, c.email_masked FROM contacts c "
+        "WHERE c.company_id=? AND c.email_masked IS NOT NULL AND c.email_masked != '' "
+        "AND (c.email IS NULL OR c.email = '')", [company_id])
+    out = []
+    for r in rows:
+        local = r["email_masked"].rsplit("@", 1)[0]
+        if local:
+            out.append((r["first_name"], r["last_name"], local))
+    return out
+
+
+def learn_from_masked(company_id, min_people=2, dry_run=False):
+    """Give one firm a convention from its masked addresses.
+
+    Returns {pattern, confidence, n, upgraded}. Nothing is written below
+    `min_people`: a single masked address is a hint, a convention is a rule.
+    """
+    rows = db.query("SELECT * FROM companies WHERE id=?", [company_id])
+    if not rows:
+        return {}
+    firm = rows[0]
+    if (firm.get("email_pattern") or "").strip():
+        return {}                       # already known; a convention is never downgraded
+    guess = pattern_from_masked(_masked_people(company_id))
+    if not guess:
+        return {}
+    pattern, confidence, n = guess
+    if n < min_people or dry_run:
+        return {"pattern": pattern, "confidence": confidence, "n": n, "upgraded": False}
+    return {"pattern": pattern, "confidence": confidence, "n": n,
+            "upgraded": store(firm, pattern, confidence, "prospeo-masked",
+                              sample=f"{pattern}@masked")}
+
+
+def learn_all_from_masked(min_people=2, dry_run=False, verbose=True):
+    """Sweep every firm with no convention, using only its masked evidence."""
+    firms = db.query("SELECT id, name FROM companies WHERE (email_pattern IS NULL "
+                     "OR email_pattern = '') AND domain IS NOT NULL AND domain != ''")
+    learned = 0
+    for f in firms:
+        res = learn_from_masked(f["id"], min_people=min_people, dry_run=dry_run)
+        if res.get("upgraded"):
+            learned += 1
+            if verbose:
+                print(f"  {f['name']}: {res['pattern']} "
+                      f"({res['n']} masked, confidence {res['confidence']})")
+    return {"firms": len(firms), "learned": learned}
+
+
+def learn_from_research(min_people=1, verbose=True):
+    """Adopt a publicly documented convention for firms we hold no verified address at.
+
+    The table is keyed by the masked domain, because that half is observed fact:
+    we saw it on a real - if redacted - address at that firm. Several company rows
+    carry a stale or wrong domain (balyasny.com vs the real bamfunds.com, for
+    instance), so the row is corrected too; otherwise reconstruction would write
+    the wrong half of the address and every mail would bounce at the door.
+    """
+    rows = db.query(
+        "SELECT co.id, co.name, co.domain, "
+        "substr(c.email_masked, instr(c.email_masked,'@')+1) AS mdom, COUNT(*) AS n "
+        "FROM companies co JOIN contacts c ON c.company_id = co.id "
+        "WHERE (co.email_pattern IS NULL OR co.email_pattern='') "
+        "AND (c.email IS NULL OR c.email='') AND c.email_masked != '' "
+        "GROUP BY co.id, mdom HAVING n >= ?", [min_people])
+    applied = 0
+    for row in rows:
+        dom = clean_domain(row["mdom"])
+        hit = RESEARCHED.get(dom)
+        if not hit:
+            continue                       # no lookup for this firm: stay honest
+        pattern, conf, example = hit
+        firm = db.query("SELECT * FROM companies WHERE id=?", [row["id"]])[0]
+        if clean_domain(firm.get("domain")) != dom:
+            db.execute("UPDATE companies SET domain=? WHERE id=?", [dom, row["id"]])
+        if store(firm, pattern, conf, RESEARCH_SOURCE, sample=example):
+            applied += 1
+            if verbose:
+                print(f"  {row['name']}: {pattern} @{dom} (confidence {conf:.0%})")
+    return {"applied": applied, "considered": len(rows)}
+
+
+def learn_from_base_rate(min_people=1, verbose=True):
+    """Give a firm with no known convention the convention your own data implies.
+
+    Measured across the 395 Hunter-verified addresses in this database:
+    first.last 68%, flast 20%, firstlast 3%, f.last 2%. So for a firm where we
+    found nothing, first.last is the honest best guess - a guess, and stored as
+    one: confidence 0.681, source 'base-rate (default)', never a claimed fact.
+
+    The masked first letter still acts as a veto afterwards (apply_masked
+    refuses a candidate that does not start with the observed letter), which
+    rules out the whole last-first family. It cannot separate first.last from
+    flast - both begin with the first initial - so a share of these will bounce,
+    and every one of them still requires an explicit confirmation to send.
+    """
+    rows = db.query(
+        "SELECT co.id, co.name, substr(c.email_masked, instr(c.email_masked,'@')+1) AS mdom, "
+        "COUNT(*) AS n FROM companies co JOIN contacts c ON c.company_id = co.id "
+        "WHERE (co.email_pattern IS NULL OR co.email_pattern='') "
+        "AND (c.email IS NULL OR c.email='') AND c.email_masked != '' "
+        "GROUP BY co.id, mdom HAVING n >= ?", [min_people])
+    applied = 0
+    for row in rows:
+        dom = clean_domain(row["mdom"])
+        if not dom:
+            continue
+        firm = db.query("SELECT * FROM companies WHERE id=?", [row["id"]])[0]
+        if clean_domain(firm.get("domain")) != dom:
+            db.execute("UPDATE companies SET domain=? WHERE id=?", [dom, row["id"]])
+        if store(firm, "first.last", 0.681, "base-rate (default)",
+                 sample=f"john.doe@{dom}"):
+            applied += 1
+            if verbose:
+                print(f"  {row['name']}: first.last @{dom} (base rate 68%)")
+    return {"applied": applied, "considered": len(rows)}
+
+
+def apply_masked_guesses(company_id=None, dry_run=False):
+    """Fill ONE address from ONE masked address, without claiming a convention.
+
+    This is the case the data is full of: one person, one masked address, and
+    exactly one pattern that could hide behind it. The firm stays "unknown" - we
+    learned one person's address, not a rule - but that person becomes writable.
+    The address is written as a reconstruction ('pattern'), which the mailer
+    already refuses to send without an explicit confirmation.
+    """
+    q = ("SELECT c.*, co.domain, co.email_pattern FROM contacts c "
+         "JOIN companies co ON co.id = c.company_id "
+         "WHERE c.email_masked IS NOT NULL AND c.email_masked != '' "
+         "AND (c.email IS NULL OR c.email = '') "
+         "AND co.domain IS NOT NULL AND co.domain != ''")
+    args = []
+    if company_id:
+        q += " AND c.company_id=?"
+        args.append(company_id)
+    n = skipped = 0
+    for r in db.query(q, args):
+        if (r["email_pattern"] or "").strip():
+            continue                     # a known convention is apply_masked()'s job
+        mask_local, mask_domain = r["email_masked"].rsplit("@", 1)
+        # The masked address observed this person's real domain. Several firm rows
+        # carry a different, wrong one (balyasny.com vs bamfunds.com), and
+        # reconstructing onto that would send every mail to a domain nobody uses.
+        domain = clean_domain(mask_domain) or clean_domain(r["domain"])
+        f, l = _alpha(r["first_name"]), _alpha(r["last_name"])
+        if not f or not l or not domain:
+            continue
+        fits = [p for p, fn in PATTERNS.items() if _mask_exact(fn(f, l) or "", mask_local)]
+        if len(fits) != 1:
+            skipped += 1                # nothing fits, or several do: refuse
+            continue
+        email = f"{PATTERNS[fits[0]](f, l)}@{domain}"
+        if dry_run:
+            n += 1
+            continue
+        db.execute("UPDATE contacts SET email=?, email_source='pattern', "
+                   "email_masked='', updated_at=CURRENT_TIMESTAMP WHERE id=?",
+                   [email, r["id"]])
+        db.execute("INSERT OR REPLACE INTO pattern_evidence (company_id, pattern, "
+                   "pattern_before, pattern_after, sample_email, source, confidence, notes) "
+                   "VALUES (?,?,?,?,?,?,?,?)",
+                   [r["company_id"], fits[0], fits[0], domain, email, "masked-single",
+                    0.5, "one masked address; the address is a reconstruction, not a fact"])
+        n += 1
+    return {"updated": n, "skipped_ambiguous": skipped}
+
+
+def _mask_admits(local, mask_local):
+    """Could this candidate local part be the one behind a Prospeo mask?
+
+    ONLY the visible characters are evidence. The length is not: measured against
+    430 real addresses at firms whose convention we already knew, the mask length
+    disagreed with the true local part 417 times and matched only 13. Prospeo
+    truncates the mask to a handful of stars, so `g****` can hide `gaurav.sonar`.
+
+    That is not a small correction. This function used to reject any candidate
+    whose length differed when the mask had 6 or fewer stars, which threw away 189
+    of 430 correct candidates - and `apply_masked` then fell back to the firm's
+    convention anyway, so the check silently bought nothing and cost half the
+    evidence it was meant to weigh.
+
+    What remains is the first letter, which matched 427 of 430. That is enough to
+    rule a candidate out and far too little to rule one in - which is precisely why
+    a masked address can confirm a convention but never establish one.
+    """
+    if not mask_local:
+        return True
+    vis = mask_local.replace("*", "")
+    return not vis or local.lower().startswith(vis.lower())
 
 
 def apply_guesses(company_id=None):
@@ -408,11 +675,13 @@ def apply_masked(company_id=None):
         # Try every convention the firm has on record. A pattern the masked
         # address is consistent with (same first letter, same length) wins
         # over the primary pattern - the mask is a check, not just decoration.
-        mask_local = r["email_masked"].rsplit("@", 1)[0]
+        mask_local, mask_domain = r["email_masked"].rsplit("@", 1)
+        # observed domain wins over the firm row: see learn_from_research()
+        domain = clean_domain(mask_domain) or clean_domain(r["domain"])
         fallback = None
         email = None
         for pattern, _conf in patterns_for_company(r["company_id"]):
-            cand = guess_email(r, {"domain": r["domain"], "email_pattern": pattern})
+            cand = guess_email(r, {"domain": domain, "email_pattern": pattern})
             if not cand:
                 continue
             if _mask_admits(cand.rsplit("@", 1)[0], mask_local):

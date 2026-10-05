@@ -381,10 +381,16 @@ async function loadQueueStatus(){
   const s = await api('GET','/api/queue/status');
   const m = s.llm || {}, mail = s.mail || {};
   const bits = [];
-  bits.push(m.configured
-    ? `<span class="tag good">model: ${esc(m.model)}</span>
-       <span class="tag gray">${m.calls} calls · ${m.cached_hits} cached</span>`
-    : `<span class="tag warn">no model</span><span class="muted"> ${esc(m.reason||'')}</span>`);
+  if(!m.configured){
+    bits.push(`<span class="tag bad">no model key</span>
+      <span class="muted"> ${esc(m.reason||'')}</span>`);
+  } else if(m.failing){
+    // The Queue looks completely dead when the key lapses. Say why, loudly.
+    bits.push(`<span class="tag bad">model calls failing</span>`);
+  } else {
+    bits.push(`<span class="tag good">model: ${esc(m.model)}</span>
+       <span class="tag gray">${m.calls} calls · ${m.cached_hits} cached</span>`);
+  }
   if(mail.send_mode==='live'){
     bits.push(mail.configured
       ? `<span class="tag good">sending: ${esc(mail.from||mail.smtp_user)}</span>
@@ -395,7 +401,14 @@ async function loadQueueStatus(){
       <span class="muted"> nothing is transmitted — set <code>mail.send_mode = "live"</code>
       in config.json when you are ready</span>`);
   }
-  $('#q-status').innerHTML = '<div class="row">'+bits.join('')+'</div>';
+  let html = '<div class="row">'+bits.join('')+'</div>';
+  if(m.configured && m.failing && m.last_error){
+    html += '<div class="flag" style="background:var(--bad-soft);color:var(--bad)">'
+          + '<b>Drafting is broken right now.</b><br>' + esc(m.last_error)
+          + '<br><span style="font-size:11.5px">A draft that was already made still '
+          + 'reads and sends below — only new ones are affected.</span></div>';
+  }
+  $('#q-status').innerHTML = html;
 }
 
 function qBadgeClass(s){
@@ -647,8 +660,6 @@ async function loadModels(force){
   const opts = (m.models||[]).map(x =>
     `<option value="${esc(x)}"${x===m.current?' selected':''}>${esc(x)}</option>`).join('');
   $('#q-model').innerHTML = opts || '<option value="">no models available</option>';
-  $('#q-model').title = (m.models||[]).length + ' models this endpoint serves'
-    + ((m.untested||[]).length ? '; ' + m.untested.length + ' not offered (unverified here)' : '');
   return m;
 }
 
@@ -710,12 +721,125 @@ async function loadCvPickers(){
   const cvs = await api('GET','/api/cvs');
   // Only validated variants appear here: this is the picker that decides what
   // gets attached to a real mail, so the status filter is the gate, not a nicety.
-  const ok = cvs.variants.filter(v=>v.status==='validated');
-  const opt = '<option value="">Base CV (no attachment)</option>'
-    + ok.map(v=>`<option value="${v.id}">${esc(v.name)}</option>`).join('');
+  // The base CV (id 0) comes first: it is your own document, so no review gate
+  // is needed - only the compiled PDF. The first option is deliberately "no
+  // attachment" rather than the base, because attaching is a decision per mail.
+  const base = cvs.variants.find(v=>v.id===0);
+  const ok = cvs.variants.filter(v=>v.id!==0 && v.status==='validated');
+  const tag = v => (v.pdf_path ? ' · PDF' : ' · no PDF');
+  const opt = '<option value="">No attachment</option>'
+    + (base ? `<option value="0">Base CV (main.tex)${base.pdf_path?' · PDF':' · no PDF'}</option>` : '')
+    + ok.map(v=>`<option value="${v.id}">${esc(v.name)}${tag(v)}</option>`).join('');
   $('#q-cv').innerHTML = opt;
   $('#q-draft-cv').innerHTML = opt;
 }
+
+/* ---------- LaTeX CV: main.tex -> PDF ---------- */
+let texInstructionLoaded = false;
+
+async function loadCvInstruction(){
+  const r = await api('GET','/api/cvs/instruction');
+  if(!texInstructionLoaded){
+    $('#tex-instruction').value = r.instruction||'';
+    texInstructionLoaded = true;
+  }
+  $('#tex-meta').textContent =
+    (r.base_tex_present ? 'base: '+r.base_tex_path : 'MAIN.TEX MISSING')
+    + (r.engine_ok ? '' : ' · NO TEX ENGINE');
+  const m = await loadModels();
+  $('#tex-model').innerHTML = (m.models||[]).map(x =>
+    `<option value="${esc(x)}">${esc(x)}</option>`).join('')
+    || '<option value="">no models available</option>';
+  if(!$('#tex-model').dataset.keep)
+    $('#tex-model').value = Array.from($('#tex-model').options)
+      .some(o=>o.value===m.current) ? m.current : '';
+  $('#tex-model').onchange = ()=>{ $('#tex-model').dataset.keep = '1'; };
+}
+
+async function saveCvInstruction(){
+  const r = await api('POST','/api/cvs/instruction',
+    {instruction:$('#tex-instruction').value||''});
+  $('#tex-status').textContent = r.error ? r.error : 'instruction saved';
+}
+
+async function resetCvInstruction(){
+  const r = await api('GET','/api/cvs/instruction');
+  $('#tex-instruction').value = r.default||'';
+  texInstructionLoaded = true;
+  $('#tex-status').textContent = 'default restored (save to keep it)';
+}
+
+function showPdf(id, label){
+  $('#tex-preview').src = '/api/cvs/pdf/'+id;
+  $('#tex-preview').style.display = '';
+  $('#tex-open').style.display = '';
+  $('#tex-open').href = '/api/cvs/pdf/'+id;
+  $('#tex-preview-label').textContent = label||('PDF of variant '+id);
+}
+
+function hidePdf(label){
+  $('#tex-preview').style.display = 'none';
+  $('#tex-open').style.display = 'none';
+  $('#tex-preview-label').textContent = label||'No PDF yet — generate one above.';
+}
+
+async function generateLatexCv(btn){
+  const firm = $('#tex-firm').value, role = $('#tex-role').value||'';
+  if(!firm && !role){
+    $('#tex-result').innerHTML = flag('Pick a firm or give a target role first.','bad');
+    return;
+  }
+  $('#tex-result').innerHTML = flag('Asking the model, then compiling…','gray');
+  if(btn) btn.disabled = true;
+  const r = await api('POST','/api/cvs/latex-propose',
+    {company_id:firm?+firm:null, role_target:role,
+     name:$('#tex-name').value||'', instruction:$('#tex-instruction').value||'',
+     model:$('#tex-model').value||''});
+  if(btn) btn.disabled = false;
+  if(r.error){ $('#tex-result').innerHTML = flag(r.error,'bad'); return; }
+  currentCvId = r.variant.id;
+  const c = r.compiled||{};
+  if(c.ok){
+    $('#tex-result').innerHTML = flag('Proposed: '+r.variant.name+'. Compiled to PDF — '
+      +'read it, edit the text if you like, then Validate.','warn');
+    showPdf(r.variant.id, 'PDF · '+r.variant.name);
+  }else if(c.kept_previous){
+    $('#tex-result').innerHTML = flag('Proposed: '+r.variant.name+', but pdflatex failed: '
+      +(c.error||'unknown error')+'. The previous PDF is shown; fix the LaTeX or '
+      +'try again. It is NOT approved.','bad');
+    showPdf(r.variant.id, 'Previous PDF · '+r.variant.name+' (stale)');
+  }else{
+    $('#tex-result').innerHTML = flag('The model replied, but pdflatex failed: '
+      +(c.error||'unknown error')+'. Fix the LaTeX or try again. It is NOT approved.','bad');
+    hidePdf('No PDF — compilation failed.');
+  }
+  $('#cv-name').value = r.variant.name;
+  $('#cv-body').value = r.variant.body;
+  loadCvs(); loadCvPickers();
+}
+
+async function compileCurrentCv(){
+  if(!currentCvId){ $('#tex-result').innerHTML = flag('Pick a variant first.','bad'); return; }
+  $('#tex-result').innerHTML = flag('Compiling…','gray');
+  const r = await api('POST','/api/cvs/compile',{id:currentCvId});
+  if(r.ok){
+    $('#tex-result').innerHTML = flag('Compiled.','good');
+    showPdf(currentCvId, 'PDF · recompiled just now');
+  }else{
+    $('#tex-result').innerHTML = flag('pdflatex failed: '+(r.error||'unknown error')
+      +(r.kept_previous?' — the previous PDF is still the one that would be sent.':''),'bad');
+  }
+  loadCvs(); loadCvPickers();
+}
+
+async function previewCurrentCv(){
+  if(!currentCvId){ $('#tex-result').innerHTML = flag('Pick a variant first.','bad'); return; }
+  const v = await api('POST','/api/cvs/get',{id:currentCvId});
+  if(v.error){ $('#tex-result').innerHTML = flag(v.error,'bad'); return; }
+  if(!v.pdf_path){ $('#tex-result').innerHTML = flag('No PDF yet — press Recompile.','bad'); return; }
+  showPdf(currentCvId, 'PDF · '+v.name);
+}
+
 
 async function loadCvsTab(){
   const firms = await api('GET','/api/companies');
@@ -723,25 +847,72 @@ async function loadCvsTab(){
   $('#cv-firm').innerHTML = '<option value="">Pick a firm…</option>'
     + firms.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');
   $('#cv-firm').value = keep;
+  const keepT = $('#tex-firm').value;
+  $('#tex-firm').innerHTML = '<option value="">Pick a firm…</option>'
+    + firms.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');
+  $('#tex-firm').value = keepT;
+  loadCvInstruction();
   loadCvs();
 }
 
 async function loadCvs(){
   const r = await api('GET','/api/cvs');
-  $('#cv-base-info').textContent = r.base_present
-    ? r.base_bytes+' characters, stored in My profile'
-    : 'none yet — paste one in My profile first';
+  const firms = [...new Set(r.variants.map(v=>v.firm||'').filter(Boolean))].sort();
+  const ff = $('#cv-filter-firm');
+  if(ff && (!ff.options.length || ff.dataset.sig !== firms.join('|'))){
+    ff.dataset.sig = firms.join('|');
+    const keep = ff.value;
+    ff.innerHTML = '<option value="">all firms</option>'
+      + firms.map(f=>`<option value="${esc(f)}">${esc(f)}</option>`).join('');
+    ff.value = keep;
+  }
+  const q = ($('#cv-search')||{value:''}).value.trim().toLowerCase();
+  const ffv = (ff||{value:''}).value, fsv = ($('#cv-filter-status')||{value:''}).value;
+  const rows = r.variants.filter(v=>
+    (!ffv || (v.firm||'')===ffv) &&
+    (!fsv || v.status===fsv) &&
+    (!q || ((v.name||'')+' '+(v.firm||'')+' '+(v.role_target||'')).toLowerCase().includes(q)));
   $('#cv-table').innerHTML =
     `<thead><tr><th>name</th><th>written for</th><th style="width:96px">status</th>
-      <th style="width:64px">size</th><th style="width:120px">made by</th></tr></thead><tbody>`+
-    r.variants.map(v=>`<tr onclick="openCv(${v.id})"
+      <th style="width:64px">size</th><th style="width:52px">PDF</th>
+      <th style="width:120px">made by</th></tr></thead><tbody>`+
+    rows.map(v=>`<tr onclick="openCv(${v.id})"
       style="${v.id===currentCvId?'background:var(--accent-soft)':''}">
-      <td><b>${esc(v.name)}</b>${v.used_by?`<span class="muted"> · used ${v.used_by}x</span>`:''}</td>
+      <td><b>${esc(v.name)}</b>${v.used_by?`<span class="muted"> · used ${v.used_by}x</span>`:''}${v.stale&&v.pdf_path?' <span class="tag warn">stale</span>':''}</td>
       <td>${esc(v.firm||'')} ${v.role_target?`<span class="muted">${esc(v.role_target)}</span>`:''}</td>
       <td><span class="tag ${v.status==='validated'?'good':(v.status==='rejected'?'gray':'warn')}">${esc(v.status)}</span></td>
       <td class="muted">${v.bytes||0}</td>
+      <td>${v.pdf_path?'<span class="tag good">PDF</span>':(v.latex_bytes?'<span class="tag warn">no PDF</span>':'<span class="muted">text</span>')}</td>
       <td class="muted">${esc(v.generation||'manual')}</td>
     </tr>`).join('')+'</tbody>';
+}
+
+function showBasePdf(){
+  $('#tex-preview').src = '/api/cvs/base-pdf';
+  $('#tex-preview').style.display = '';
+  $('#tex-open').style.display = '';
+  $('#tex-open').href = '/api/cvs/base-pdf';
+  $('#tex-preview-label').textContent = 'The base — main.tex, compiled just now.';
+}
+
+async function previewBaseCv(){
+  $('#tex-result').innerHTML = '';
+  showBasePdf();
+}
+
+/* The Words/LaTeX editor tabs. A variant has one source of truth - the LaTeX
+   it was compiled from - and the words are the rendering of it. Editing the
+   LaTeX and saving is therefore the operation that matters: it rebuilds the
+   PDF, so the preview afterwards shows what mail would attach. */
+let cvEditorMode = 'text';
+
+function setCvEditor(mode){
+  cvEditorMode = mode;
+  $('#cv-body').classList.toggle('hide', mode!=='text');
+  $('#cv-latex').classList.toggle('hide', mode!=='latex');
+  $('#cv-editor-hint').textContent = mode==='latex'
+    ? 'Saving rebuilds the PDF from this source.'
+    : 'Saving keeps the words; the PDF stays as compiled.';
 }
 
 async function openCv(id){
@@ -750,57 +921,59 @@ async function openCv(id){
   if(v.error) return;
   $('#cv-name').value = v.name||'';
   $('#cv-body').value = v.body||'';
+  $('#cv-latex').value = v.latex||'';
+  setCvEditor((v.latex||'') ? 'latex' : 'text');
   $('#cv-edit-title').innerHTML = 'Editing: <span class="muted">'+esc(v.name)+'</span>';
   $('#cv-saved').textContent = '';
+  $('#cv-editor-hint').textContent = v.id===0
+    ? 'main.tex itself. It cannot be saved from here - edit the file, then Recompile.'
+    : '';
+  if(v.pdf_url||v.pdf_path) showPdf(id, (v.stale?'Stale PDF · ':'PDF · ')+v.name);
   loadCvs();
 }
 
-async function proposeCv(){
-  const firm = $('#cv-firm').value;
-  $('#cv-propose-result').innerHTML = flag('Asking the model...','gray');
-  const r = await api('POST','/api/cvs/propose',
-    {company_id:firm?+firm:null, role_target:$('#cv-role').value||''});
-  if(r.error){ $('#cv-propose-result').innerHTML = flag(r.error,'bad'); return; }
-  $('#cv-propose-result').innerHTML = flag('Proposed: '+r.variant.name
-    +'. It is NOT approved - read it, edit it, then Validate.', 'warn');
-  currentCvId = r.variant.id;
-  $('#cv-name').value = r.variant.name;
-  $('#cv-body').value = r.variant.body;
-  $('#cv-edit-title').innerHTML = 'Reviewing: <span class="muted">'
-    +esc(r.variant.name)+'</span>';
-  loadCvs();
-}
+async function openBasePdf(){ previewBaseCv(); }
 
 async function saveCv(){
+  if(currentCvId===0){
+    $('#cv-saved').textContent = 'main.tex cannot be saved from here - edit the file, then Recompile';
+    return;
+  }
   if(!currentCvId){ newCv(); return; }
-  const r = await api('POST','/api/cvs/save',
-    {id:currentCvId, name:$('#cv-name').value, body:$('#cv-body').value});
-  $('#cv-saved').textContent = r.error ? r.error : 'saved';
+  const payload = {id:currentCvId, name:$('#cv-name').value};
+  if(cvEditorMode==='latex') payload.latex = $('#cv-latex').value;
+  else payload.body = $('#cv-body').value;
+  const r = await api('POST','/api/cvs/save', payload);
+  if(r.error){ $('#cv-saved').textContent = r.error; return; }
+  if(r.compiled){
+    $('#cv-saved').textContent = r.compiled.ok ? 'saved, PDF rebuilt'
+      : 'saved, but the PDF failed: '+(r.compiled.error||'unknown error');
+    if(r.compiled.ok) showPdf(currentCvId, 'PDF · recompiled from your edit');
+  }else{
+    $('#cv-saved').textContent = 'saved';
+  }
   loadCvs(); loadCvPickers();
 }
 
 async function newCv(){
+  const body = $('#cv-body').value, latex = $('#cv-latex').value||'';
   const r = await api('POST','/api/cvs/create', {name:$('#cv-name').value||'untitled',
-    body:$('#cv-body').value, company_id:$('#cv-firm').value||null});
+    body, latex, company_id:$('#cv-firm').value||null});
   if(r.error){ $('#cv-saved').textContent = r.error; return; }
   currentCvId = r.id;
   $('#cv-saved').textContent = 'created';
-  loadCvs(); loadCvPickers();
+  if(latex) compileCurrentCv(); else { loadCvs(); loadCvPickers(); }
 }
 
 async function reviewCv(decision){
   if(!currentCvId){ $('#cv-saved').textContent = 'pick a variant first'; return; }
-  if(decision==='validated' && !confirm('Validate this CV? A validated variant can be attached '
-    +'to a queued mail. The base CV is never changed either way.')) return;
+  if(decision==='validated' && !confirm('Validate this CV? A validated variant can be attached '+
+    'to a queued mail. The base CV is never changed either way.')) return;
   const r = await api('POST','/api/cvs/review',{id:currentCvId, decision});
   $('#cv-saved').textContent = r.error ? r.error : decision;
   loadCvs(); loadCvPickers();
 }
 
-function openBaseCv(){
-  document.querySelector('#nav button[data-tab="profile"]').click();
-  setTimeout(()=>{ const t=$('#p-cv'); if(t) t.scrollIntoView({behavior:'smooth'}); }, 60);
-}
 async function loadOutreach(){
   const p = new URLSearchParams();
   if($('#ostatus').value) p.set('status',$('#ostatus').value);

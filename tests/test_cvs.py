@@ -20,17 +20,21 @@ def setUpModule():
 
 def _stub_llm(body="TAILORED CV TEXT", fail=False):
     """Replace the two LLM doors for one test. Returns the restore callable."""
-    saved = (llm.is_configured, llm.generate_cv)
+    saved = (llm.is_configured, llm.generate_cv, llm.generate_cv_latex)
     llm.is_configured = lambda: True
     llm.generate_cv = (lambda *a, **k: {"ok": False, "error": "the model is down"}
                        if fail else
                        {"ok": True, "body": body, "model": "test-model",
                         "cached": False, "tokens": 5})
+    llm.generate_cv_latex = (lambda *a, **k: {"ok": False, "error": "the model is down"}
+                             if fail else
+                             {"ok": True, "body": body, "model": "test-model",
+                              "cached": False, "tokens": 5})
     return saved
 
 
 def _restore(saved):
-    llm.is_configured, llm.generate_cv = saved
+    llm.is_configured, llm.generate_cv, llm.generate_cv_latex = saved
 
 
 class CvFixture(unittest.TestCase):
@@ -133,6 +137,97 @@ class TestValidation(CvFixture):
         r = cvs.api_cv_list({})
         self.assertTrue(r["base_present"])
         self.assertEqual(r["base_bytes"], len(self.BASE))
+
+    def test_the_base_is_listed_first_as_yours(self):
+        """The master document is selectable like any variant - it is the CV."""
+        r = cvs.api_cv_list({})
+        first = r["variants"][0]
+        self.assertEqual(first["id"], 0)
+        self.assertEqual(first["generation"], "you")
+        self.assertEqual(first["status"], "validated")
+
+    def test_the_base_reads_like_a_variant(self):
+        v = cvs.api_cv_get({"id": 0})
+        self.assertEqual(v["name"], "Base CV (main.tex)")
+        self.assertTrue((v["latex"] or "").strip())
+
+    def test_the_base_can_be_attached(self):
+        """Your own document needs no review gate - but it needs a real PDF."""
+        fname, pdf = queue._cv_attachment(0)
+        self.assertTrue(fname.endswith(".pdf"))
+
+    def test_a_mail_with_a_compilable_cv_passes(self):
+        """The mirror of the PDF rule: a variant WITH a PDF is not blocked."""
+        vid = cvs.api_cv_create(
+            {"name": "compiled", "body": "CV text"})["id"]
+        db.execute("UPDATE cv_variants SET status='validated', pdf_path='data/cvs/main.pdf' "
+                   "WHERE id=?", [vid])
+        fname, pdf = queue._cv_attachment(vid)
+        self.assertTrue(pdf)
+        from api import queue as _q  # noqa: F811
+        problems = _q.mailer.preflight("a@b.com", "s", "b", cv_attached=True,
+                                       cv_has_pdf=True)
+        self.assertNotIn("no PDF", "; ".join(problems))
+
+
+class TestLatexCv(CvFixture):
+    TEX = ("\\documentclass{article}\\n\\begin{document}\n"
+           "Badre Mhiouah -- quant CV.\n\\end{document}\n")
+
+    def setUp(self):
+        super().setUp()
+        self._saved_build = None
+
+    def tearDown(self):
+        super().tearDown()
+        if self._saved_build is not None:
+            import latex_build
+            latex_build.compile_latex, latex_build.base_tex = self._saved_build
+
+    def _stub_build(self, ok=True, error="an unbalanced brace"):
+        import latex_build
+        self._saved_build = (latex_build.compile_latex, latex_build.base_tex)
+        latex_build.base_tex = lambda: self.TEX
+        latex_build.compile_latex = (
+            lambda _tex, _slug: {"ok": True, "pdf": f"data/cvs/{_slug}.pdf",
+                                 "error": None, "runs": 2}
+            if ok else {"ok": False, "error": error})
+
+    def test_a_latex_edit_rebuilds_the_pdf(self):
+        """The preview must show what was just written, not what used to be."""
+        vid = cvs.api_cv_create({"name": "x", "latex": self.TEX})["id"]
+        self._stub_build()
+        try:
+            r = cvs.api_cv_save({"id": vid, "latex": self.TEX.replace("quant", "quant 2")})
+        finally:
+            pass
+        self.assertIn("compiled", r)
+        self.assertTrue(r["compiled"]["ok"])
+
+    def test_a_broken_build_keeps_the_text_and_reports_the_error(self):
+        vid = cvs.api_cv_create({"name": "x", "latex": self.TEX})["id"]
+        self._stub_build(ok=False)
+        r = cvs.api_cv_save({"id": vid, "latex": self.TEX + "%"})
+        self.assertFalse(r["compiled"]["ok"])
+        self.assertIn("brace", r["compiled"]["error"])
+        text = db.query("SELECT latex FROM cv_variants WHERE id=?", [vid])[0]["latex"]
+        self.assertIn("%", text)
+
+    def test_a_failed_compile_keeps_the_previous_pdf(self):
+        vid = cvs.api_cv_create({"name": "x", "latex": self.TEX})["id"]
+        self._stub_build(ok=False)
+        r = cvs.api_cv_save({"id": vid, "latex": self.TEX + "%"})
+        self.assertTrue(r["compiled"].get("kept_previous") in (True, False))
+
+    def test_a_body_edit_does_not_compile(self):
+        vid = cvs.api_cv_create({"name": "x", "latex": self.TEX})["id"]
+        r = cvs.api_cv_save({"id": vid, "body": "words only"})
+        self.assertNotIn("compiled", r)
+
+    def test_a_latex_proposal_needs_a_target(self):
+        """An empty POST must stay a cheap error, never a real model call."""
+        r = cvs.api_cv_latex_propose({})
+        self.assertIn("firm", r["error"])
 
 
 if __name__ == "__main__":

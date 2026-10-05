@@ -853,6 +853,129 @@ class TestChoosingTheModel(QueueFixture):
         self.assertEqual(r["queue"]["model"], "chosen-model")
 
 
+class TestFailuresExplainThemselves(unittest.TestCase):
+    """A failing model call must say why. These are the messages that replaced a
+    dead button: the Queue simply stopped working and read as a broken app."""
+
+    def test_an_expired_aws_signature_is_named_as_such(self):
+        """The real failure mode on a Bedrock key: every model 401s at once and
+        the body blames entitlement, which sends you down the wrong path."""
+        msg = llm._explain_http(
+            "HTTP 401: Signature expired: 20261002T035705Z is now earlier than "
+            "20261004T141148Z (20261004T141648Z - 5 min.)", "openai.gpt-oss-120b")
+        self.assertIn("expired on 2026-10-02", msg.replace("20261002", "2026-10-02"))
+        self.assertIn("time-limited", msg)
+        self.assertIn("config.json", msg)
+
+    def test_the_date_is_read_from_a_lowercased_string(self):
+        """`low` has already turned T and Z lowercase, so a `\\d+T\\d+Z` pattern
+        can never fire. This is what printed 'expired on some time ago'."""
+        msg = llm._explain_http(
+            "HTTP 401: signature expired: 20261002t035705z is now earlier", "m")
+        self.assertIn("20261002", msg)
+        self.assertNotIn("some time ago", msg)
+
+    def test_an_unsupported_api_is_named(self):
+        self.assertIn("does not speak /chat/completions",
+                      llm._explain_http(
+                          "HTTP 400: The model 'anthropic.claude-sonnet-5' does not "
+                          "support the '/v1/chat/completions' API", "anthropic.claude-sonnet-5"))
+
+    def test_an_unentitled_model_is_distinguished_from_a_bad_key(self):
+        self.assertIn("not entitled", llm._explain_http("HTTP 401", "openai.gpt-6-sol"))
+
+    def test_an_unknown_error_is_not_invented(self):
+        self.assertEqual(llm._explain_http("HTTP 418 teapot", "m"), "HTTP 418 teapot")
+        self.assertEqual(llm._explain_http(None, "m"), "the request failed")
+
+    def test_status_flags_a_recent_failure(self):
+        """So the Queue can say 'drafting is broken' instead of doing nothing."""
+        saved_cfg = llm.config
+        llm.config = lambda: {**saved_cfg(), "api_key": "k"}
+        db.execute("DELETE FROM fetch_log WHERE provider='llm'")
+        try:
+            self.assertFalse(llm.status().get("failing"))
+            db.execute("INSERT INTO fetch_log (provider,endpoint,request_key,ok,error,"
+                       "fetched_at) VALUES ('llm','chat','old',0,'boom',"
+                       "'2020-01-01 00:00:00')")
+            db.execute("INSERT INTO fetch_log (provider,endpoint,request_key,ok,error,"
+                       "fetched_at) VALUES ('llm','chat','good',1,'','2021-01-01 00:00:00')")
+            self.assertFalse(llm.status().get("failing"), "a later success clears it")
+            db.execute("INSERT INTO fetch_log (provider,endpoint,request_key,ok,error,"
+                       "fetched_at) VALUES ('llm','chat','new',0,'Signature expired: "
+                       "20261002T035705Z','2026-01-01 00:00:00')")
+            st = llm.status()
+            self.assertTrue(st.get("failing"))
+            self.assertIn("expired", st["last_error"])
+        finally:
+            db.execute("DELETE FROM fetch_log WHERE provider='llm'")
+            llm.config = saved_cfg
+
+
+class TestModelShortlist(unittest.TestCase):
+    """The dropdown is five models, chosen for writing rather than benchmarks."""
+
+    SERVED = [
+        "anthropic.claude-sonnet-5", "xai.grok-4.3", "google.gemma-4-31b",
+        "writer.palmyra-vision-7b", "openai.gpt-6-sol", "openai.gpt-5.6-terra",
+        "openai.gpt-oss-120b", "moonshotai.kimi-k2.5",
+        "mistral.mistral-large-3-675b-instruct", "deepseek.v3.2", "zai.glm-5",
+        "qwen.qwen3-235b-a22b-2507", "google.gemma-3-4b-it",
+        "mistral.ministral-3-3b-instruct"]
+
+    def _models(self, current="openai.gpt-oss-120b"):
+        saved = llm.available_models, llm.config
+        llm.available_models = lambda: list(self.SERVED)
+        llm.config = lambda: {**saved[1](), "model": current}
+        try:
+            return queue.api_models()
+        finally:
+            llm.available_models, llm.config = saved
+
+    def test_no_more_than_five_are_offered(self):
+        self.assertLessEqual(len(self._models()["models"]), 5)
+
+    def test_the_configured_model_is_always_reachable(self):
+        """Dropping the model the user last chose would look like the app retired it."""
+        for m in ("deepseek.v3.2", "moonshotai.kimi-k2.5", "openai.gpt-oss-120b"):
+            self.assertIn(m, self._models(m)["models"])
+
+    def test_models_the_endpoint_cannot_serve_are_never_offered(self):
+        for m in self._models()["models"]:
+            self.assertFalse(m.startswith(("anthropic.", "xai.", "openai.gpt-5",
+                                           "openai.gpt-6", "google.gemma-4", "writer.")), m)
+
+    def test_everything_offered_is_something_the_endpoint_serves(self):
+        """A name that is not on /models would fail the moment it was used."""
+        served = set(self.SERVED)
+        for m in self._models()["models"]:
+            self.assertIn(m, served, f"{m} is offered but the endpoint does not serve it")
+
+    def test_the_offered_list_is_the_shortlist_plus_the_configured_model(self):
+        """The exact contract: five slots, filled from the prose shortlist, and
+        the model the user last chose is never dropped in favour of it."""
+        for current in ("openai.gpt-oss-120b", "deepseek.v3.2", "moonshotai.kimi-k2.5"):
+            r = self._models(current)
+            self.assertLessEqual(len(r["models"]), 5)
+            self.assertIn(current, r["models"])
+            for m in r["models"]:
+                self.assertTrue(
+                    m in queue.TOP_MODELS_FOR_PROSE or m == current,
+                    f"{m} is neither shortlisted nor the configured model")
+
+    def test_a_shortlisted_model_the_endpoint_lacks_is_simply_not_offered(self):
+        """The list is a preference, not a promise: if a model is renamed or
+        withdrawn it must disappear rather than fail on selection."""
+        saved = llm.available_models, llm.config
+        without = [m for m in self.SERVED if m != "zai.glm-5"]
+        llm.available_models = lambda: list(without)
+        llm.config = lambda: {**saved[1](), "model": "openai.gpt-oss-120b"}
+        try:
+            self.assertNotIn("zai.glm-5", queue.api_models()["models"])
+        finally:
+            llm.available_models, llm.config = saved
+
+
 class TestTheLlmClient(unittest.TestCase):
     """The two ways this endpoint fails in ways a generic client does not.
 

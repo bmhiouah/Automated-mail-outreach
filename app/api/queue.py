@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db                       # noqa: E402
 import email_gen                # noqa: E402
 import llm                      # noqa: E402
+import latex_build              # noqa: E402
 import mailer                   # noqa: E402
 from domain import enrich_contact, get_profile, now_iso   # noqa: E402
 
@@ -108,11 +109,52 @@ def _cv_text(cv_id):
     `or ""` matters because a variant with an empty body must fall back to the
     base rather than attach an empty document.
     """
+    if cv_id in (0, "0"):
+        # The base CV scores whole: it is the document most mails will carry.
+        rows = db.query("SELECT cv_text AS body FROM profile WHERE id=1")
+        return (rows[0]["body"] or "") if rows else ""
     if not cv_id:
         return ""
     rows = db.query("SELECT body FROM cv_variants WHERE id=? AND status='validated'",
                     [cv_id])
     return (rows[0]["body"] or "") if rows else ""
+
+
+def _cv_attachment(cv_id):
+    """(filename, pdf_bytes) for a validated variant, or ("", b"") if none.
+
+    Two gates, deliberately separate: the variant must be one you approved, and
+    it must have been compiled. A CV that exists only as text has no PDF to
+    send, and the preflight refuses that rather than the send quietly dropping
+    the attachment and leaving a mail that promised one.
+    """
+    if not cv_id:
+        # No CV chosen: the mail goes out with no attachment at all, which is a
+        # decision the sender makes in the picker, not an error.
+        return "", b""
+    if cv_id in (0, "0"):
+        # The base CV is approved by definition - it is your document - but it
+        # still has to exist on disk, or the mail would silently leave without
+        # the attachment it implies.
+        pdf = latex_build.pdf_bytes("data/cvs/main.pdf")
+        return ("base-cv.pdf", pdf) if pdf else ("", b"")
+    rows = db.query("SELECT name, pdf_path FROM cv_variants "
+                    "WHERE id=? AND status='validated'", [cv_id])
+    if not rows:
+        return "", b""
+    fname = (latex_build.slugify(rows[0]["name"]) or "cv") + ".pdf"
+    return fname, latex_build.pdf_bytes(rows[0]["pdf_path"])
+
+
+def _cv_base_summary():
+    """What the queue shows for the base CV, without a database row.
+
+    Same shape as the variant query so the badges and flags below do not need
+    to know which of the two they are looking at.
+    """
+    return {"id": 0, "name": "Base CV (main.tex)", "status": "validated",
+            "pdf_path": "data/cvs/main.pdf" if latex_build.pdf_exists(
+                "data/cvs/main.pdf") else ""}
 
 
 # ------------------------------------------------------------------ reading
@@ -184,17 +226,22 @@ def api_queue_get(payload):
                      "linkedin_url", "email", "email_source")}
     q["company"] = {k: company.get(k) for k in
                     ("id", "name", "type", "hq_city", "research", "careers_url")}
-    q["cv"] = db.query("SELECT id, name, status FROM cv_variants WHERE id=?",
-                       [q["cv_id"]])[0] if q.get("cv_id") else None
+    q["cv"] = (dict(_cv_base_summary()) if q.get("cv_id") in (0, "0")
+               else (db.query("SELECT id, name, status, pdf_path FROM cv_variants WHERE id=?",
+                              [q["cv_id"]])[0] if q.get("cv_id") else None))
     # Re-score on read: after an edit the stored grade is stale, and a stale grade
     # shown next to edited text is worse than no grade at all.
     ctx, quality, flags = _ctx_and_scoring(contact, company, q["subject"], q["body"],
                                            _cv_text(q.get("cv_id")))
     q["quality"] = quality
     q["flags"] = flags
+    cv_attached = bool(q.get("cv_id"))
+    q["cv_has_pdf"] = bool(q["cv"] and latex_build.pdf_exists(q["cv"].get("pdf_path")))
     q["blocking"] = mailer.preflight(q.get("to_addr"), q.get("subject"), q.get("body"),
                                      q.get("addr_kind") or KIND_NONE,
-                                     confirm_pattern=bool(payload.get("confirm_pattern")))
+                                     confirm_pattern=bool(payload.get("confirm_pattern")),
+                                     cv_attached=cv_attached,
+                                     cv_has_pdf=q["cv_has_pdf"])
     return q
 
 
@@ -517,14 +564,13 @@ def api_validate(payload):
     followup_days = int(payload.get("followup_days") or 7)
     addr_kind = payload.get("addr_kind") or q.get("addr_kind") or KIND_NONE
     cv_text = _cv_text(q.get("cv_id"))
-    cv_name = ""
-    if q.get("cv_id"):
-        cvr = db.query("SELECT name FROM cv_variants WHERE id=?", [q["cv_id"]])
-        cv_name = (cvr[0]["name"] if cvr else "") + ".txt"
+    cv_name, cv_pdf = _cv_attachment(q.get("cv_id"))
+    cv_attached = bool(q.get("cv_id"))
 
     problems = mailer.preflight(q.get("to_addr"), q.get("subject"), q.get("body"),
                                 addr_kind,
-                                confirm_pattern=bool(payload.get("confirm_pattern")))
+                                confirm_pattern=bool(payload.get("confirm_pattern")),
+                                cv_attached=cv_attached, cv_has_pdf=bool(cv_pdf))
     if problems:
         return {"ok": False, "sent": False, "error": "; ".join(problems),
                 "blocking": problems}
@@ -544,7 +590,8 @@ def api_validate(payload):
     result = mailer.send(q.get("to_addr"), q.get("subject"), q.get("body"),
                          addr_kind=addr_kind,
                          confirm_pattern=bool(payload.get("confirm_pattern")),
-                         cv_filename=cv_name or None, cv_text=cv_text or None)
+                         cv_filename=cv_name or None, cv_text=cv_text or None,
+                         cv_pdf=cv_pdf or None, cv_attached=cv_attached)
     if not result["ok"]:
         db.execute("UPDATE mail_queue SET status='failed', send_error=? WHERE id=?",
                    [result.get("error"), qid])
@@ -629,27 +676,52 @@ def api_queue_followup(payload):
     return {"queue": row, "flags": flags, "outreach_id": oid}
 
 
-def api_models():
-    """The models this endpoint will actually serve, for the picker's dropdown.
+# The models offered in the Queue dropdown, in the order they are shown.
+#
+# A shortlist rather than the endpoint's full list, because the endpoint
+# advertises ~37 models that work, most of them small quantised builds
+# (`gemma-3-4b`, `nemotron-nano-9b`, `ministral-3-3b`) tuned for following
+# instructions on structured output. This task is the opposite: ~150 words of cold
+# email that must not read like a machine, where the value is entirely in prose
+# quality. So the list is picked for writing, not for benchmarks.
+#
+# This is a judgement, not a measurement, and it lives in exactly one place so it
+# is cheap to disagree with: edit the list and restart. The configured model is
+# always kept in the dropdown even when it is not on this list, so switching to
+# another one never quietly removes the ability to go back.
+TOP_MODELS_FOR_PROSE = [
+    "moonshotai.kimi-k2.5",                   # the strongest prose of the set
+    "mistral.mistral-large-3-675b-instruct",  # best at holding the exact format
+    "deepseek.v3.2",
+    "zai.glm-5",
+    "qwen.qwen3-235b-a22b-2507",
+]
 
-    The filter is measured, not guessed. On this Bedrock endpoint `/models`
-    advertises 57: every `anthropic.*` rejects `/v1/chat/completions` with a 400,
-    and every `openai.*` answers `access_denied` because the account is not
-    entitled. Offering those would be offering most of the list that cannot work.
-    `untested` carries the remainder so nothing is hidden - it is just not
-    pre-approved.
+
+def api_models():
+    """The picker list: the prose shortlist, filtered to what this endpoint
+    actually serves, plus the configured model so it is never lost.
+
+    The filter is measured, not guessed. This Bedrock endpoint advertises every
+    `anthropic.*` (rejected: no /chat/completions) and every `openai.*`
+    (access_denied: not entitled), so offering the raw list would mean offering
+    mostly things that cannot work.
     """
-    models = llm.available_models()
+    available = llm.available_models()
     current = llm.config()["model"]
 
     def rejected(m):
-        return (m.startswith(("anthropic.", "xai.grok", "google.gemma-4",
-                              "writer.", "openai.gpt-5", "openai.gpt-6")))
+        return m.startswith(("anthropic.", "xai.grok", "google.gemma-4",
+                             "writer.", "openai.gpt-5", "openai.gpt-6"))
 
-    good = [m for m in models if not rejected(m)]
-    untested = [m for m in models if rejected(m) and not m.startswith(
-        ("anthropic.", "xai.grok", "google.gemma-4", "writer."))]
-    return {"models": good, "current": current, "untested": untested,
+    usable = [m for m in available if not rejected(m)]
+    chosen = [m for m in TOP_MODELS_FOR_PROSE if m in usable]
+    if current and current in available and not rejected(current) and current not in chosen:
+        # Keep the configured model reachable: it is the one the user last chose,
+        # so dropping it would look like the app decided to retire it.
+        chosen = chosen[:4] + [current]
+    return {"models": chosen, "current": current,
+            "available_count": len(usable),
             "base_url": llm.config()["base_url"]}
 
 

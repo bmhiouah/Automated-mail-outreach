@@ -337,6 +337,9 @@ def ensure_schema(verbose=False):
     added += ensure_columns("mail_queue", ["specifics TEXT"])
     added += ensure_columns("pattern_evidence",
                             ["pattern_before TEXT", "pattern_after TEXT"])
+    added += ensure_columns("cv_variants", ["latex TEXT", "pdf_path TEXT",
+                                            "pdf_at TEXT", "instruction TEXT"])
+    added += ensure_columns("profile", ["cv_instruction TEXT"])
 
     # The first harvest stored Hunter's verbatim title in `headline`. It belongs
     # in position_raw now that we have a column for it, and moving it means the
