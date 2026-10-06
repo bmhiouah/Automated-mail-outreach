@@ -3,6 +3,9 @@
   "hunter_api_key": "paste your Hunter.io key here",
   "prospeo_api_key": "paste your Prospeo key here",
 
+  "_tavily": "Optional. Gives paragraph 1 of a mail one current-news line, from app.tavily.com (the free tier is enough). Without a key the mail simply has no news sentence. Env var TAVILY_API_KEY overrides this.",
+  "tavily_api_key": "tvly-...",
+
   "_llm": "Optional. Any OpenAI-compatible endpoint. Without it the Queue tab still works - drafts come from your templates instead. Env vars OPENAI_API_KEY / OPENAI_BASE_URL / OPENAI_MODEL override these, so a key need never touch this file.",
   "llm": {
     "api_key": "sk-...",

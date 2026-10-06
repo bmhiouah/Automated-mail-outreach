@@ -198,7 +198,7 @@ def score_email(subject, body, ctx=None):
     if words > 200:
         issues.append(f"{words} words - far too long, this will not be read")
         score -= 25
-    elif words > 150:
+    elif words > 185:
         issues.append(f"{words} words - too long, nobody reads this on a phone")
         score -= 15
     elif words < 40:
@@ -227,8 +227,8 @@ def score_email(subject, body, ctx=None):
         score -= 5
 
     paragraphs = [p for p in text.split("\n\n") if p.strip()]
-    if len(paragraphs) > 5:
-        issues.append(f"{len(paragraphs)} paragraphs - cut to four or fewer")
+    if len(paragraphs) > 8:
+        issues.append(f"{len(paragraphs)} paragraphs - cut to eight or fewer")
         score -= 5
 
     score = max(0, min(100, score))
@@ -242,8 +242,8 @@ def score_email(subject, body, ctx=None):
 def quality_flags(ctx, body):
     """Cheap sanity checks before anything leaves the machine."""
     flags = []
-    if len(body) > 900:
-        flags.append("body is long (>900 chars) - desks do not read essays")
+    if len(body) > 1200:
+        flags.append("body is long (>1200 chars) - desks do not read essays")
     if not ctx.get("first_name"):
         flags.append("no first name - do not send a cold email to 'Hi ,'")
     if not ctx.get("hook") and not ctx.get("company_hook"):

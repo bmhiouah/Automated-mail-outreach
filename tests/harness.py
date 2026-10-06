@@ -38,6 +38,10 @@ def bootstrap():
     tmp = tempfile.mkdtemp(prefix="cold-approach-tests-")
     db.DB_PATH = os.path.join(tmp, "test.db")
     db.SEED_PATH = os.path.join(db.BASE, "data", "companies_seed.csv")
+    # Providers must never reach the real network from a test - not even
+    # once a real Tavily key exists in config.json. The provider checks
+    # this flag before it looks for a key.
+    os.environ["COLD_APPROACH_OFFLINE"] = "1"
     # Raw payloads are written next to the DB path, but the raw folder is a module
     # constant - redirect it too, or the tests litter the real data/raw.
     db.RAW_DIR = os.path.join(tmp, "raw")

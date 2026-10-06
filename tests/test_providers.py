@@ -6,6 +6,7 @@ from .harness import bootstrap  # noqa: E402
 from api import people
 from providers import hunter
 from providers import prospeo
+from providers import tavily
 import db
 import harvest
 import io
@@ -388,6 +389,90 @@ class TestProgressiveHarvest(unittest.TestCase):
         second = db.ensure_schema()
         self.assertEqual(first, [])
         self.assertEqual(second, [])
+
+
+class TestTavily(unittest.TestCase):
+    """One news line per firm: cached, ledgered, silent without a key."""
+
+    def setUp(self):
+        self._orig = net.request_json
+        # The harness sets COLD_APPROACH_OFFLINE for the whole suite; these
+        # tests exercise the online paths, so they borrow the offline flag
+        # back for the duration and restore it after.
+        self._offline = os.environ.pop("COLD_APPROACH_OFFLINE", None)
+        self.calls = []
+
+    def tearDown(self):
+        net.request_json = self._orig
+        if self._offline is None:
+            os.environ.pop("COLD_APPROACH_OFFLINE", None)
+        else:
+            os.environ["COLD_APPROACH_OFFLINE"] = self._offline
+
+    def _fake(self, url, params=None, headers=None, method="GET", data=None,
+              **kw):
+        self.calls.append(url)
+        reply = {"results": [
+            {"title": "AQR opens a Paris research hub",
+             "url": "https://example.com/aqr",
+             "content": "The firm announced the hub this week."}]}
+        raw = json.dumps(reply).encode("utf-8")
+        return {"ok": True, "status": 200, "error": None, "headers": {},
+                "body": raw, "text": raw.decode(), "json": reply}
+
+    def test_offline_never_touches_the_network(self):
+        os.environ["COLD_APPROACH_OFFLINE"] = "1"
+        net.request_json = self._fake
+        body, meta = tavily.search("AQR latest news", api_key="tvly-fake")
+        self.assertIsNone(body)
+        self.assertIn("offline", meta["error"])
+        self.assertEqual(self.calls, [])
+
+    def test_no_key_is_a_quiet_skip_not_a_crash(self):
+        saved = tavily.load_key
+        tavily.load_key = lambda *a, **k: ""
+        net.request_json = self._fake
+        try:
+            body, meta = tavily.search("AQR latest news")
+        finally:
+            tavily.load_key = saved
+        self.assertIsNone(body)
+        self.assertIn("no Tavily key", meta["error"])
+        self.assertEqual(self.calls, [])
+
+    def test_the_same_query_is_paid_for_once(self):
+        saved = tavily.load_key
+        tavily.load_key = lambda *a, **k: "tvly-fake"
+        net.request_json = self._fake
+        try:
+            first, meta1 = tavily.search("AQR latest news")
+            second, meta2 = tavily.search("AQR latest news")
+        finally:
+            tavily.load_key = saved
+        self.assertTrue(first and second)
+        self.assertEqual(len(self.calls), 1)
+        self.assertFalse(meta1["cached"])
+        self.assertTrue(meta2["cached"])
+
+    def test_recent_news_builds_one_line_or_nothing(self):
+        saved = tavily.search
+        try:
+            tavily.search = lambda *a, **k: (
+                {"results": [{"title": "AQR opens a Paris research hub",
+                              "url": "https://example.com/aqr",
+                              "content": "The firm announced it."}]},
+                {"ok": True})
+            line = tavily.recent_news("AQR Capital Management")
+            self.assertIn("AQR opens a Paris research hub", line)
+            self.assertIn("example.com/aqr", line)
+
+            tavily.search = lambda *a, **k: ({"results": []}, {"ok": True})
+            self.assertEqual(tavily.recent_news("AQR Capital Management"), "")
+            tavily.search = lambda *a, **k: (None, {"ok": False})
+            self.assertEqual(tavily.recent_news("AQR Capital Management"), "")
+            self.assertEqual(tavily.recent_news(""), "")
+        finally:
+            tavily.search = saved
 
 
 class TestProspeoProvider(unittest.TestCase):

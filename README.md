@@ -163,16 +163,18 @@ the API outright. Pick a different model per batch; each row records which one
 wrote it, so you can split reply rate by model later.
 
 The model is given a closed block of facts — the contact, their career history,
-the firm's brief and live hiring signal, your profile — and told explicitly not to
-invent anything that is not in it. It must follow your nine-paragraph shape:
+the firm's brief and live hiring signal, one recent-news line from Tavily (needs
+a key; '(unknown)' otherwise), your profile — and told explicitly not to
+invent anything that is not in it. It must follow your shape:
 
 1. `Hi <name>,`
-2. how you came across them, and the specific reason this firm caught your eye
-3. your 1–2 relevant skills, one concrete thing you did, and why it fits their desk
-4. **the ask** — *do you know if your team, or another team there, is looking for
-   someone with this background?*
-5. an offer of 10–15 minutes, around their schedule
-6. a line about your LinkedIn/CV
+2. how you came across them, what they actually do, one current-news line if
+   Tavily found one, and why you specifically
+3. a broad professional identity, current focus, and one project (with its GitHub link)
+4. **the ask** — *Could you let me know if your team, or a related team, is looking
+   for someone with this mix of market and AI experience?*
+5. an offer of a brief 10–15 minute chat at their convenience
+6. a line saying the CV is included (the LinkedIn lives in the signature)
 7. a thank-you by name, then `Best,`
 8. the sign-off — **written by the code**, not the model, because models invent
    phone numbers and profile URLs.

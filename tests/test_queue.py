@@ -544,13 +544,36 @@ class TestThePromptCarriesThePerson(unittest.TestCase):
         self.assertNotIn("Algolia", prompt)
 
     def test_the_prompt_demands_the_hiring_question(self):
-        """The user's own wording: 'do you know if your team ... is looking for
-        someone with this background' - a referral-shaped ask, not 'are you
-        hiring', which is the harder yes to get."""
+        """The user's own wording: 'Could you let me know if your team, or a
+        related team, is looking for someone with this mix' - the question
+        itself with no flattering preface, plus the meeting offer."""
         prompt = self._real_prompt()
-        self.assertIn("currently looking for someone with this background", prompt)
-        self.assertIn("10-15 minutes", prompt)
-        self.assertIn("work around their schedule", prompt)
+        self.assertIn("Could you let me know if your team, or a related team", prompt)
+        self.assertIn("10-15 minute", prompt)
+        self.assertIn("at your convenience", prompt)
+        self.assertNotIn("I would really value your perspective", prompt)
+
+    def test_paragraph_one_is_about_them_not_the_firm(self):
+        """Paragraph 1: their narrow function, optionally one fetched news
+        sentence, then why THIS person - never 'the firm caught my eye'."""
+        prompt = self._real_prompt()
+        self.assertIn("getting in touch with you specifically", prompt)
+        self.assertIn("noticed you {{their actual work - narrow:", prompt)
+        self.assertNotIn("caught my attention because of", prompt)
+
+    def test_a_recent_news_line_reaches_the_prompt(self):
+        """One current, fetched fact may appear in paragraph 1 - only when
+        it exists; '(unknown)' keeps its usual meaning: write around it."""
+        saved = llm.tavily.recent_news
+        llm.tavily.recent_news = lambda *a, **k: (
+            "AQR opens a Paris research hub - The firm announced it this "
+            "week. (https://example.com/aqr)")
+        try:
+            prompt = self._real_prompt()
+        finally:
+            llm.tavily.recent_news = saved
+        self.assertIn("Recent news", prompt)
+        self.assertIn("AQR opens a Paris research hub", prompt)
 
     def test_the_prompt_forbids_markdown(self):
         """The source template was written with **bold**; a mail is plain text and

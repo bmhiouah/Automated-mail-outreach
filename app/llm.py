@@ -36,6 +36,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import db    # noqa: E402
 import net   # noqa: E402
 import taxonomy  # noqa: E402
+from providers import tavily  # noqa: E402
 
 CONFIG_PATH = os.path.join(db.BASE, "config.json")
 
@@ -44,68 +45,73 @@ CONFIG_PATH = os.path.join(db.BASE, "config.json")
 ENDPOINT = "chat"
 
 SYSTEM_PROMPT = (
-    "You write cold outreach email for a junior quant-finance candidate "
-    "approaching people at banks, hedge funds, prop trading firms and asset "
-    "managers in Paris and London.\n"
+    "You turn facts about one person, their firm, and one candidate into a "
+    "cold email that follows a fixed template. Fill every {{placeholder}} "
+    "from the facts. If a fact is '(unknown)', write around it and make the "
+    "mail shorter.\n"
     "\n"
-    "The mail must read as written for ONE person at ONE firm, never pasted "
-    "at anyone. The way to earn that is a genuine link built from BOTH sides "
-    "of the facts: something specific about them - their desk, their career, "
-    "what the firm is known for or hiring for - joined to something simple "
-    "and true about the candidate, taken from their own words in the facts, "
-    "not from the CV summary. Both sides must be present: them in paragraph "
-    "1, the candidate in paragraph 2.\n"
+    "The mail reads:\n"
     "\n"
-    "SPECIFIC ABOUT THEM, PLAIN ABOUT YOU. Every sentence about the firm, "
-    "the team or the person must carry a concrete detail from the facts: a "
-    "name, a team, a career step, a live signal. The candidate's side stays "
-    "human and simple - what they genuinely love doing, one project named at "
-    "most. No achievement metrics about the candidate: never a percentage, "
-    "a P&L number or a run of CV bullets - that reads as hard sell. Their "
-    "side could not be sent to anyone else; your side must not sound like "
-    "an advertisement.\n"
+    "  Hi {{FirstName}},\n"
     "\n"
-    "SHAPE. Four short paragraphs, one blank line between them, nothing "
-    "added, nothing merged, nothing reordered:\n"
+    "  I came across your profile while researching {{Company}} and noticed "
+    "you {{their actual work - narrow: the desk, team or area they work "
+    "in}}.{{When the FACTS carry a recent-news line, one short sentence "
+    "with that fact exactly as given.}} I am exploring {{target "
+    "role/function}}, and I am getting in touch with you specifically "
+    "because {{the link: their work or problem and my background, one "
+    "concrete sentence}}.\n"
     "\n"
-    "  Hi <their first name>,\n"
-    "  (1) Why this firm and this person. Name their actual function - the "
-    "      desk, the team, the asset class, the mandate - and one specific, "
-    "      genuine reason this firm caught your attention: what they are "
-    "      known for, what they are building, a live hiring signal.\n"
-    "  (2) The link. One or two plain sentences in the candidate's voice: "
-    "      what they genuinely love doing - code, data, quantitative "
-    "      problems - joined to something specific about this firm, team or "
-    "      problem. At most one short project mention, with the GitHub link "
-    "      only if it fits naturally. This is the paragraph that makes the "
-    "      mail theirs.\n"
-    "  (3) The ask, in one breath: whether their team, or another team "
-    "      there, is currently looking for someone with this background - "
-    "      and if they are building the team out, that you would love to be "
-    "      considered. Then 10-15 minutes, happy to work around their "
-    "      schedule.\n"
-    "  (4) One line that your LinkedIn or CV is included - only if the "
-    "      facts give one - then thank them by first name for their time.\n"
+    "  I am a {{professional identity - one broad phrase, from their "
+    "headline and ten answers}} with experience in {{the broad mix - e.g. "
+    "trading, risk and AI-driven automation}}, currently focused on "
+    "{{what they are applying it to now}}. I built {{one project, in one "
+    "plain sentence}} ({{GitHub link}}).\n"
+    "\n"
+    "  Could you let me know if your team, or a related team, is looking "
+    "for someone with this mix of market and AI experience? I would "
+    "welcome a brief 10-15 minute chat at your convenience.\n"
+    "\n"
+    "  I have included my CV here for context.\n"
+    "\n"
+    "  Thank you, {{FirstName}} - I appreciate your time.\n"
+    "\n"
     "  Best,\n"
     "\n"
-    "The code writes the sign-off after 'Best,'. Stop there.\n"
-    "\n"
     "RULES THAT MATTER MORE THAN FLUENCY.\n"
-    "- 110 to 140 words, leaning toward the lower end. These are read on a "
-    "phone between meetings.\n"
-    "- Simple and clear beats clever: short sentences, one idea each, "
-    "everyday words. No nested clauses, no thesaurus, no register you would "
-    "not use out loud.\n"
+    "- The candidate may state what they are exploring and what they have "
+    "done. They never praise the firm, the team, the person or the work: "
+    "no impressive, strong, excellent, exciting, fascinating, world-class, "
+    "amazing, incredible, perfect, ideal, unique, cutting-edge, or eager "
+    "to join.\n"
+    "- Paragraph 1 is about the person, not the firm: their work stated "
+    "narrowly - the desk, team or area - from their title and career. The "
+    "firm appears only as where they work, or in the news sentence.\n"
+    "- The link is one concrete sentence joining their work or problem "
+    "(from the facts) to the candidate's background (from the facts): why "
+    "THIS person, never flattery.\n"
+    "- Recent news: at most one short sentence, the fact exactly as the "
+    "FACTS give it - no URL, no adjectives. A '(unknown)' news line means "
+    "no news sentence.\n"
+    "- The background paragraph is a broad professional identity and "
+    "current focus, in plain words from their headline, pitch or ten "
+    "answers - never a list of narrow skills, never a specific past trade "
+    "or desk detail, and it carries NO numbers: no percentage, no P&L "
+    "figure, no metric of any kind about the candidate.\n"
+    "- One project only, in one plain sentence, with its GitHub link in "
+    "parentheses if the facts give one.\n"
+    "- The ask is the question itself: no preface before it - no 'I would "
+    "value your perspective' style openers - and 'this mix' must match "
+    "what the background paragraph said.\n"
+    "- The body carries no LinkedIn URL: the context line only says the CV "
+    "is included, and that line is dropped when the facts show no CV on "
+    "file. The sign-off the code writes already carries the LinkedIn.\n"
+    "- Short sentences, one idea each, everyday words. 130 to 170 words.\n"
     "- Subject: specific to this firm or this person, under 65 characters, "
     "never a generic 'Hello' or 'Introduction'.\n"
-    "- Every sentence must survive being pasted to someone else at another "
-    "firm. If it would, cut it.\n"
     "- Never invent: no project, employer, date, skill, number, strategy or "
     "compliment that is not in the facts. If a fact is '(unknown)', write "
     "around it and make the mail shorter.\n"
-    "- The candidate's ten answers, under \"In the writer's own words\", are "
-    "the richest facts there are. Prefer them over the CV summary for the "
-    "link in paragraph 2.\n"
     "- No markdown, no asterisks, no bold, no bullet points.\n"
     "- No filler. Banned: 'I hope this email finds you well', 'I am writing "
     "to', 'I wanted to reach out', 'reaching out', 'passionate', "
@@ -114,10 +120,12 @@ SYSTEM_PROMPT = (
     "'to whom it may concern', 'I came across your impressive'.\n"
     "- British spelling, no exclamation marks, no emoji.\n"
     "\n"
+    "After 'Best,' stop. The code writes the sign-off.\n"
+    "\n"
     "Reply with JSON only, no prose and no code fence: "
     '{"subject": "...", "body": "...", '
     '"specifics": ["which fact justified paragraph 1", '
-    '"which of the candidate\'s own words justified the link in paragraph 2"]}'
+    '"which of the candidate\'s own words justified paragraph 2"]}'
 )
 
 
@@ -551,7 +559,7 @@ def _own_words(profile):
     return "\n".join(lines) if any_answer else ""
 
 
-def _facts_block(contact, company, profile):
+def _facts_block(contact, company, profile, news=""):
     """Everything the model may use, as a labelled, explicitly-closed block.
 
     The closing instruction matters as much as the facts: the cheapest way to get
@@ -589,6 +597,8 @@ def _facts_block(contact, company, profile):
         _line("What they are known for (this app's research note)",
               company.get("research"), 900),
         _line("Live hiring signal, right now", _firm_activity(company), 300),
+        _line("Recent news (one short sentence exactly as given; never a URL)",
+              news),
         _line("Careers page", company.get("careers_url"), 200),
         "",
         "== YOU, THE PERSON WRITING ==",
@@ -636,63 +646,77 @@ def generate_mail(contact, company, profile, cv_text=None, note="", force=False,
 
     The task restates the structure immediately before the facts, because a model
     follows an instruction far more reliably when it is repeated next to the data
-    it applies to. It is the same four-part structure as the system prompt; saying
-    it twice is deliberate.
+    it applies to. It is the same structure as the system prompt; saying it twice
+    is deliberate.
     """
     extra = [f"The candidate's own note for this contact: {note}"] if note else []
+    # One current fact for paragraph 1, fetched once per firm and replayed
+    # from the ledger. '' when there is no key or no result: the mail then
+    # simply carries no news sentence.
+    news = tavily.recent_news((company or {}).get("name")
+                              or (contact or {}).get("company_name") or "")
     prompt = "\n".join([
         "Write one cold email to the person below. It must read as written for "
         "this person at this firm, not pasted at anyone.",
         "",
-        "The link is the job, and it is built from both sides of the FACTS "
-        "below: something specific about them - their role, their career, what "
-        "the firm is known for or hiring for - joined to something simple and "
-        "true about the candidate, taken from their own words (the ten "
-        "answers), not the CV summary. Specific about them, plain about you: "
-        "a vague mail means a fact about them was ignored, and a mail that "
-        "lists your metrics reads as hard sell.",
+        "The mail must follow this template exactly - one blank line between "
+        "blocks, nothing added, nothing merged, nothing reordered:",
         "",
-        "Follow this exact shape - one blank line between paragraphs, nothing "
-        "added, nothing merged:",
+        "Hi {{FirstName}},",
         "",
-        "Hi <their first name>,",
+        "I came across your profile while researching {{Company}} and noticed "
+        "you {{their actual work - narrow: the desk, team or area they work "
+        "in}}.{{When the FACTS carry a recent-news line, one short sentence "
+        "with that fact exactly as given.}} I am exploring {{target "
+        "role/function}}, and I am getting in touch with you specifically "
+        "because {{the link: their work or problem and my background, one "
+        "concrete sentence}}.",
         "",
-        "Paragraph 1: why this firm and this person. Name their actual function - "
-        "the desk, the team, the asset class, the mandate. Then one specific, "
-        "genuine reason this firm caught your attention: what they are known for, "
-        "what they are building, a live hiring signal.",
+        "I am a {{professional identity - one broad phrase, from their "
+        "headline and ten answers}} with experience in {{the broad mix - "
+        "e.g. trading, risk and AI-driven automation}}, currently focused "
+        "on {{what they are applying it to now}}. I built {{one project, "
+        "in one plain sentence}} ({{GitHub link}}).",
         "",
-        "Paragraph 2: the link. One or two plain sentences in the candidate's "
-        "voice - what they genuinely love doing, taken from their own words (the "
-        "ten answers): code, data, quantitative problems - joined to something "
-        "specific about that firm, team or problem. At most one short project "
-        "mention, with the GitHub link only if it fits naturally. No achievement "
-        "metrics: never a percentage, a P&L number or a run of CV bullets - that "
-        "reads as hard sell. This paragraph is what makes the mail theirs.",
+        "Could you let me know if your team, or a related team, is looking "
+        "for someone with this mix of market and AI experience? I would "
+        "welcome a brief 10-15 minute chat at your convenience.",
         "",
-        "Paragraph 3: the ask, in one breath - whether their team, or another "
-        "team there, is currently looking for someone with this background, and "
-        "if they are building the team out, that you would love to be "
-        "considered; then 10-15 minutes, happy to work around their schedule.",
+        "I have included my CV here for context.",
         "",
-        "Paragraph 4: one line that your LinkedIn or CV is included - only if the "
-        "facts give one - then thank them by first name for their time.",
+        "Thank you, {{FirstName}} - I appreciate your time.",
         "",
         "Then: Best, and stop. The code writes the sign-off.",
         "",
-        "Rules: simple, clear language - short sentences, one idea each, everyday "
-        "words, nothing you would not say out loud. Every sentence about the "
-        "firm, the team or the person must carry a concrete detail from the "
-        "FACTS: a name, a team, a career step, a signal. The candidate's side "
-        "stays plain - one human sentence about what they love doing, at most "
-        "one project named; never percentages, P&L numbers or CV bullets. "
-        "No markdown, no asterisks, no bold, no bullet points. Nothing "
-        "that could be pasted to someone else at another firm. The candidate's "
-        "ten answers are the richest facts - prefer them for the link. If a fact "
-        "is '(unknown)', write around it and make the mail shorter rather than "
-        "inventing something. 110 to 140 words, leaning toward the lower end.",
+        "Rules: replace every {{placeholder}} with a fact from the FACTS "
+        "below and never leave braces in the output. Paragraph 1 is about "
+        "the person, not the firm: their work stated narrowly - the desk, "
+        "team or area - from their title and career; the firm appears only "
+        "as where they work or in the news sentence. The link is one "
+        "concrete sentence joining their work or problem to the candidate's "
+        "background - why THIS person, never flattery. Recent news: at "
+        "most one short sentence, the fact exactly as the FACTS give it, "
+        "no URL; an '(unknown)' news line means no news sentence. The background "
+        "paragraph is a broad professional identity and current focus, in "
+        "plain words from the candidate's headline, pitch or ten answers - "
+        "never a list of narrow skills, never a specific past trade or "
+        "desk detail, and it carries NO numbers: quote no percentage, no "
+        "P&L figure, no metric of any kind about the candidate. One "
+        "project only, in one plain sentence, with its GitHub link in "
+        "parentheses if the facts give one. The ask is the question "
+        "itself: no preface before it - no 'I would value your perspective' "
+        "style openers - and 'this mix' must match what the background "
+        "paragraph said. The "
+        "context line only says the CV is included - drop that line if the "
+        "facts show no CV - and the body never pastes a LinkedIn URL: the "
+        "sign-off the code writes already carries it. No "
+        "praise words: no impressive, strong, excellent, exciting, "
+        "fascinating, world-class, amazing or perfect. No markdown, no "
+        "asterisks, no bold, no bullet points. If a fact is '(unknown)', "
+        "write around it and make the mail shorter rather than inventing "
+        "something. 130 to 170 words.",
         "",
-        _facts_block(contact, company or {}, profile),
+        _facts_block(contact, company or {}, profile, news=news),
         "",
         "CV - you may take facts from it, but do not summarise it in the mail:",
         "---",
@@ -715,7 +739,10 @@ def generate_mail(contact, company, profile, cv_text=None, note="", force=False,
     if out.get("ok") and sig:
         missing = [ln for ln in sig.split("\n") if ln.lower() not in tail]
         if missing:
-            out["body"] = out["body"].rstrip() + "\n\n" + "\n".join(missing)
+            # Single newline, not a blank line: the user's template puts the
+            # name/LinkedIn/phone directly under 'Best,', and a blank line
+            # here also made every mail a ninth block for the scorer.
+            out["body"] = out["body"].rstrip() + "\n" + "\n".join(missing)
     return out
 
 
