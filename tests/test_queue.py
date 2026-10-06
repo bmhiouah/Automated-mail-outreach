@@ -553,12 +553,19 @@ class TestThePromptCarriesThePerson(unittest.TestCase):
         self.assertIn("at your convenience", prompt)
         self.assertNotIn("I would really value your perspective", prompt)
 
-    def test_paragraph_one_is_about_them_not_the_firm(self):
-        """Paragraph 1: their narrow function, optionally one fetched news
-        sentence, then why THIS person - never 'the firm caught my eye'."""
+    def test_paragraph_one_opener_is_about_them(self):
+        """Paragraph 1 opener: reason + target role + found via their work,
+        phrased so it stays grammatical - never 'opportunities in <job
+        title>' (the 'opportunities in Quantitative Analyst' failure) and
+        never 'I came across your profile while researching'. """
         prompt = self._real_prompt()
-        self.assertIn("getting in touch with you specifically", prompt)
-        self.assertIn("noticed you {{their actual work - narrow:", prompt)
+        self.assertIn("exploring {{target role}} opportunities", prompt)
+        self.assertIn("came across your work at {{Company}}", prompt)
+        self.assertIn("where you {{their actual work - narrow:", prompt)
+        # The broken form appears in the prompt only to be banned.
+        self.assertIn("opportunities in <a job title>", prompt)
+        self.assertIn("Grammar comes first", llm.SYSTEM_PROMPT)
+        self.assertNotIn("I came across your profile while researching", prompt)
         self.assertNotIn("caught my attention because of", prompt)
 
     def test_a_recent_news_line_reaches_the_prompt(self):

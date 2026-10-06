@@ -142,11 +142,7 @@ BANNED_PHRASES = {
     "i hope this finds you well": "the most deleted opener in existence",
     "i am writing to": "just say the thing",
     "i wanted to reach out": "empty preamble - start with the substance",
-    "i am reaching out": "empty preamble - just say what you want",
-    "reaching out because": "name the reason without the frame",
-    "reaching out to see": "empty preamble",
-    "reaching out": "empty preamble",
-    "passionate": "show it, don't claim it",
+
     "hard-working": "unverifiable adjective",
     "team player": "unverifiable adjective",
     "detail-oriented": "unverifiable adjective",
