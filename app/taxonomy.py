@@ -43,7 +43,28 @@ TITLES_BY_TYPE = {
 PROFILE_FIELDS = ["full_name", "email", "phone", "linkedin", "github", "website",
                   "headline", "city", "target_roles", "years_exp", "education",
                   "key_skills", "projects", "achievements", "languages",
-                  "availability", "pitch", "cv_text"]
+                  "availability", "pitch", "cv_text", "answers"]
+
+# Ten questions the user answers in their own words. A CV is a summary
+# written for a stranger, so it leaves out exactly the things that make a
+# mail worth reading: the split behind a number, the reason behind a choice,
+# the result that never made a bullet. The answers are stored as a JSON
+# array in profile.answers, in this order, and passed to the model verbatim
+# - see llm._facts_block. Kept here so the form, the save and the prompt all
+# read one list.
+PROFILE_QUESTIONS = [
+    "How would you describe yourself in one line?",
+    "How many years of experience do you have, and how do they split "
+    "across roles or desks?",
+    "What is the achievement you are most proud of, with numbers?",
+    "What kind of role are you targeting, and why that kind?",
+    "What makes you different from other candidates with a similar CV?",
+    "What is a concrete result you delivered, with numbers?",
+    "Which tools, languages or technologies are you strongest in?",
+    "What do you want to be doing in three years?",
+    "Which firms or teams interest you most, and why?",
+    "Is there anything a recruiter should know that your CV does not show?",
+]
 CONTACT_IMPORT_MAP = {
     "first name": "first_name", "firstname": "first_name", "prenom": "first_name",
     "last name": "last_name", "lastname": "last_name", "nom": "last_name",

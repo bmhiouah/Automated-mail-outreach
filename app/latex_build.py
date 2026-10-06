@@ -220,3 +220,31 @@ def pdf_bytes(pdf_path):
             return fh.read()
     except OSError:
         return b""
+
+
+def remove_variant_files(vid, pdf_path=None):
+    """Delete one variant's compiled artefacts. Best-effort; never raises.
+
+    A deleted variant should not leave a PDF behind that a stale link could
+    still serve, so the .tex and .pdf are removed with it. Only paths that
+    resolve inside data/cvs/ are touched: `pdf_path` came from a database row,
+    and a stray '../' must not turn a delete into a shredder. A file that is
+    already gone is not an error - the row is what the user asked to remove.
+    """
+    removed = []
+    candidates = [os.path.join(CV_DIR, f"cv-{vid}.tex"),
+                  os.path.join(CV_DIR, f"cv-{vid}.pdf")]
+    if pdf_path:
+        candidates.append(pdf_path if os.path.isabs(pdf_path)
+                          else os.path.join(BASE, pdf_path))
+    real_dir = os.path.realpath(CV_DIR)
+    for candidate in candidates:
+        real = os.path.realpath(candidate)
+        if not (real == real_dir or real.startswith(real_dir + os.sep)):
+            continue
+        try:
+            os.remove(real)
+        except OSError:
+            continue
+        removed.append(os.path.relpath(real, BASE).replace(os.sep, "/"))
+    return removed

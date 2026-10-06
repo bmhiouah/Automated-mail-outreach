@@ -105,3 +105,7 @@ Write the function in the right `app/api/` module, add one line to that module's
 handler and looked-up id must resolve, or the split-era UI fails the same way an
 endpoint test fails. New logic gets a test that would fail if the logic were
 deleted - this project improves by accumulating sentences like that one.
+
+The database is not the only thing a test can damage. `data/cvs/` is real output,
+so `tests/test_cvs.py` points `latex_build.CV_DIR` at a throwaway directory: a
+test that deletes a variant must never be able to remove a CV you own.

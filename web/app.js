@@ -716,6 +716,9 @@ async function loadHistory(){
 
 /* ---------- CV variants ---------- */
 let currentCvId = null;
+// One pdflatex at a time. Clicking a variant recompiles it, so a fast
+// double-click would otherwise race two builds onto the same output file.
+let cvBusy = false;
 
 async function loadCvPickers(){
   const cvs = await api('GET','/api/cvs');
@@ -747,13 +750,13 @@ async function loadCvInstruction(){
     (r.base_tex_present ? 'base: '+r.base_tex_path : 'MAIN.TEX MISSING')
     + (r.engine_ok ? '' : ' · NO TEX ENGINE');
   const m = await loadModels();
+  const keepModel = $('#tex-model').value;
   $('#tex-model').innerHTML = (m.models||[]).map(x =>
     `<option value="${esc(x)}">${esc(x)}</option>`).join('')
     || '<option value="">no models available</option>';
-  if(!$('#tex-model').dataset.keep)
-    $('#tex-model').value = Array.from($('#tex-model').options)
-      .some(o=>o.value===m.current) ? m.current : '';
-  $('#tex-model').onchange = ()=>{ $('#tex-model').dataset.keep = '1'; };
+  const offered = Array.from($('#tex-model').options).map(o=>o.value);
+  if(keepModel && offered.includes(keepModel)) $('#tex-model').value = keepModel;
+  else if(offered.includes(m.current)) $('#tex-model').value = m.current;
 }
 
 async function saveCvInstruction(){
@@ -769,11 +772,16 @@ async function resetCvInstruction(){
   $('#tex-status').textContent = 'default restored (save to keep it)';
 }
 
+function cvPdfUrl(id){
+  return '/api/cvs/pdf/'+id+'?t='+Date.now();
+}
+
 function showPdf(id, label){
-  $('#tex-preview').src = '/api/cvs/pdf/'+id;
+  const url = cvPdfUrl(id);
+  $('#tex-preview').src = url;
   $('#tex-preview').style.display = '';
   $('#tex-open').style.display = '';
-  $('#tex-open').href = '/api/cvs/pdf/'+id;
+  $('#tex-open').href = url;
   $('#tex-preview-label').textContent = label||('PDF of variant '+id);
 }
 
@@ -814,14 +822,20 @@ async function generateLatexCv(btn){
     hidePdf('No PDF — compilation failed.');
   }
   $('#cv-name').value = r.variant.name;
-  $('#cv-body').value = r.variant.body;
+  $('#cv-body').value = r.variant.body||'';
+  $('#cv-latex').value = r.variant.latex||'';
+  setCvEditor((r.variant.latex||'') ? 'latex' : 'text');
   loadCvs(); loadCvPickers();
 }
 
 async function compileCurrentCv(){
-  if(!currentCvId){ $('#tex-result').innerHTML = flag('Pick a variant first.','bad'); return; }
+  if(currentCvId===null || currentCvId===undefined){
+    $('#tex-result').innerHTML = flag('Pick a variant first.','bad'); return;
+  }
   $('#tex-result').innerHTML = flag('Compiling…','gray');
-  const r = await api('POST','/api/cvs/compile',{id:currentCvId});
+  const r = currentCvId===0
+    ? await api('POST','/api/cvs/base-compile',{})
+    : await api('POST','/api/cvs/compile',{id:currentCvId});
   if(r.ok){
     $('#tex-result').innerHTML = flag('Compiled.','good');
     showPdf(currentCvId, 'PDF · recompiled just now');
@@ -833,7 +847,9 @@ async function compileCurrentCv(){
 }
 
 async function previewCurrentCv(){
-  if(!currentCvId){ $('#tex-result').innerHTML = flag('Pick a variant first.','bad'); return; }
+  if(currentCvId===null || currentCvId===undefined){
+    $('#tex-result').innerHTML = flag('Pick a variant first.','bad'); return;
+  }
   const v = await api('POST','/api/cvs/get',{id:currentCvId});
   if(v.error){ $('#tex-result').innerHTML = flag(v.error,'bad'); return; }
   if(!v.pdf_path){ $('#tex-result').innerHTML = flag('No PDF yet — press Recompile.','bad'); return; }
@@ -843,16 +859,26 @@ async function previewCurrentCv(){
 
 async function loadCvsTab(){
   const firms = await api('GET','/api/companies');
-  const keep = $('#cv-firm').value;
-  $('#cv-firm').innerHTML = '<option value="">Pick a firm…</option>'
-    + firms.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');
-  $('#cv-firm').value = keep;
   const keepT = $('#tex-firm').value;
   $('#tex-firm').innerHTML = '<option value="">Pick a firm…</option>'
     + firms.map(f=>`<option value="${f.id}">${esc(f.name)}</option>`).join('');
   $('#tex-firm').value = keepT;
   loadCvInstruction();
   loadCvs();
+}
+
+function cvMadeBy(v){
+  const g = v.generation||'';
+  if(v.id===0 || g==='you') return 'me';
+  if(g.startsWith('llm:')) return g.slice(4) || 'model';
+  return g || 'manual';
+}
+
+function cvMadeKind(v){
+  const g = v.generation||'';
+  if(v.id===0 || g==='you') return 'me';
+  if(g.startsWith('llm:')) return 'llm';
+  return 'manual';
 }
 
 async function loadCvs(){
@@ -867,15 +893,30 @@ async function loadCvs(){
     ff.value = keep;
   }
   const q = ($('#cv-search')||{value:''}).value.trim().toLowerCase();
-  const ffv = (ff||{value:''}).value, fsv = ($('#cv-filter-status')||{value:''}).value;
-  const rows = r.variants.filter(v=>
+  const ffv = (ff||{value:''}).value;
+  const fsv = ($('#cv-filter-status')||{value:''}).value;
+  const made = ($('#cv-filter-made')||{value:''}).value;
+  const sort = ($('#cv-sort')||{value:'newest'}).value;
+  const hay = v => ((v.name||'')+' '+(v.firm||'')+' '+(v.role_target||'')+' '
+    +cvMadeBy(v)+' '+(v.generation||'')).toLowerCase();
+  let rows = r.variants.filter(v=>
     (!ffv || (v.firm||'')===ffv) &&
     (!fsv || v.status===fsv) &&
-    (!q || ((v.name||'')+' '+(v.firm||'')+' '+(v.role_target||'')).toLowerCase().includes(q)));
+    (!made || cvMadeKind(v)===made) &&
+    (!q || hay(v).includes(q)));
+  if(sort==='name') rows = rows.slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  else if(sort==='firm') rows = rows.slice().sort((a,b)=>(a.firm||'').localeCompare(b.firm||''));
+  else rows = rows.slice().sort((a,b)=>{
+    if(a.id===0) return -1;
+    if(b.id===0) return 1;
+    return 0;
+  });
+  const n = r.variants.length;
+  $('#cv-count').textContent = rows.length===n ? (n+' CVs') : (rows.length+' of '+n);
   $('#cv-table').innerHTML =
     `<thead><tr><th>name</th><th>written for</th><th style="width:96px">status</th>
       <th style="width:64px">size</th><th style="width:52px">PDF</th>
-      <th style="width:120px">made by</th></tr></thead><tbody>`+
+      <th style="width:140px">made by</th><th style="width:74px"></th></tr></thead><tbody>`+
     rows.map(v=>`<tr onclick="openCv(${v.id})"
       style="${v.id===currentCvId?'background:var(--accent-soft)':''}">
       <td><b>${esc(v.name)}</b>${v.used_by?`<span class="muted"> · used ${v.used_by}x</span>`:''}${v.stale&&v.pdf_path?' <span class="tag warn">stale</span>':''}</td>
@@ -883,16 +924,18 @@ async function loadCvs(){
       <td><span class="tag ${v.status==='validated'?'good':(v.status==='rejected'?'gray':'warn')}">${esc(v.status)}</span></td>
       <td class="muted">${v.bytes||0}</td>
       <td>${v.pdf_path?'<span class="tag good">PDF</span>':(v.latex_bytes?'<span class="tag warn">no PDF</span>':'<span class="muted">text</span>')}</td>
-      <td class="muted">${esc(v.generation||'manual')}</td>
+      <td>${v.id===0||v.generation==='you'
+        ? '<span class="tag good">me</span>'
+        : `<span class="muted">${esc(cvMadeBy(v))}</span>`}</td>
+      <td>${v.id===0
+        ? '<span class="muted" title="main.tex is your master document and is never deleted">—</span>'
+        : `<button class="ghost sm" title="Delete this variant and its compiled PDF"
+             onclick="deleteCv(event, ${v.id})">Delete</button>`}</td>
     </tr>`).join('')+'</tbody>';
 }
 
 function showBasePdf(){
-  $('#tex-preview').src = '/api/cvs/base-pdf';
-  $('#tex-preview').style.display = '';
-  $('#tex-open').style.display = '';
-  $('#tex-open').href = '/api/cvs/base-pdf';
-  $('#tex-preview-label').textContent = 'The base — main.tex, compiled just now.';
+  showPdf(0, 'The base — main.tex, compiled just now.');
 }
 
 async function previewBaseCv(){
@@ -911,25 +954,108 @@ function setCvEditor(mode){
   $('#cv-body').classList.toggle('hide', mode!=='text');
   $('#cv-latex').classList.toggle('hide', mode!=='latex');
   $('#cv-editor-hint').textContent = mode==='latex'
-    ? 'Saving rebuilds the PDF from this source.'
-    : 'Saving keeps the words; the PDF stays as compiled.';
+    ? 'Saving writes this .tex and rebuilds the PDF.'
+    : 'Saving writes these words back into the .tex, then rebuilds the PDF.';
+}
+
+/* Clicking a variant must show the document as it is NOW, not as it was the
+   last time something compiled it: edit, Save, click, and the preview has to
+   carry the edit. So a click recompiles before it shows. The base (id 0) is
+   compiled on demand by its own endpoint, so loading its preview already is
+   the recompile - running it twice would just compile the same file twice. */
+async function recompileAndShow(id, v){
+  const name = (v && v.name) || ('variant '+id);
+  if(id===0){
+    showPdf(0, 'The base — main.tex, compiled just now.');
+    revealPreview();
+    return;
+  }
+  if(!(v && (v.latex||'').trim())){
+    // A variant pasted as plain text has no source, so there is nothing to
+    // compile. Say so rather than showing a PDF that would never change.
+    if(v && (v.pdf_url||v.pdf_path)) showPdf(id, 'PDF · '+name);
+    else hidePdf('No PDF — this variant has no LaTeX source to compile.');
+    return;
+  }
+  $('#tex-result').innerHTML = flag('Recompiling '+name+'…','gray');
+  const r = await api('POST','/api/cvs/compile',{id});
+  if(r.ok){
+    $('#tex-result').innerHTML = flag('Recompiled from your latest save.','good');
+    showPdf(id, 'PDF · '+name+' (recompiled just now)');
+    revealPreview();
+  }else{
+    $('#tex-result').innerHTML = flag('pdflatex failed: '+(r.error||'unknown error')
+      +(r.kept_previous?' — showing the previous PDF.':''),'bad');
+    if(r.kept_previous){ showPdf(id, 'Previous PDF · '+name+' (stale)'); revealPreview(); }
+    else hidePdf('No PDF — compilation failed.');
+  }
+}
+
+/* The preview lives above the list, so a click in the list would otherwise
+   recompile something the user cannot see. Bring it back into view. */
+function revealPreview(){
+  const el = $('#tex-preview');
+  if(el && el.scrollIntoView) el.scrollIntoView({behavior:'smooth', block:'center'});
 }
 
 async function openCv(id){
-  currentCvId = id;
+  if(cvBusy) return;                       // a build is already in flight
+  cvBusy = true;
+  try{
+    currentCvId = id;
+    const v = await api('POST','/api/cvs/get',{id});
+    if(v.error){ $('#tex-result').innerHTML = flag(v.error,'bad'); return; }
+    $('#cv-name').value = v.name||'';
+    $('#cv-body').value = v.body||'';
+    $('#cv-latex').value = v.latex||'';
+    setCvEditor((v.latex||'') ? 'latex' : 'text');
+    $('#cv-edit-title').innerHTML = 'Editing: <span class="muted">'+esc(v.name)+'</span>';
+    $('#cv-saved').textContent = '';
+    $('#cv-editor-hint').textContent = v.id===0
+      ? 'main.tex itself. It cannot be saved from here - edit the file, then Recompile.'
+      : '';
+    loadCvs();                              // highlight the row straight away
+    await recompileAndShow(id, v);
+    loadCvs();                              // then refresh the PDF badge
+  }finally{
+    cvBusy = false;
+  }
+}
+
+/* Delete feedback lives in the Variants card, next to the table the
+   button sits in. The Tailor card's #tex-result is a screen up and to
+   the left, so a refusal written there - a variant still attached to
+   an unsent mail, say - is easy to miss, and the row simply stays. */
+function cvStatus(text, kind){
+  const el = $('#cv-status');
+  if(!el) return;
+  el.textContent = text || '';
+  el.style.color = {bad:'var(--bad)', good:'var(--good)',
+                    warn:'var(--warn)'}[kind] || 'var(--muted)';
+}
+
+/* Delete a variant you no longer want. The event is stopped so the row's own
+   click handler does not also open the document we are about to remove. */
+async function deleteCv(ev, id){
+  if(ev && ev.stopPropagation) ev.stopPropagation();
+  if(id===0){
+    cvStatus('The base CV cannot be deleted — it is main.tex.','bad');
+    return;
+  }
   const v = await api('POST','/api/cvs/get',{id});
-  if(v.error) return;
-  $('#cv-name').value = v.name||'';
-  $('#cv-body').value = v.body||'';
-  $('#cv-latex').value = v.latex||'';
-  setCvEditor((v.latex||'') ? 'latex' : 'text');
-  $('#cv-edit-title').innerHTML = 'Editing: <span class="muted">'+esc(v.name)+'</span>';
-  $('#cv-saved').textContent = '';
-  $('#cv-editor-hint').textContent = v.id===0
-    ? 'main.tex itself. It cannot be saved from here - edit the file, then Recompile.'
-    : '';
-  if(v.pdf_url||v.pdf_path) showPdf(id, (v.stale?'Stale PDF · ':'PDF · ')+v.name);
-  loadCvs();
+  const name = (v && v.name) || ('variant '+id);
+  if(!confirm('Delete "'+name+'"?\n\nIts compiled PDF and .tex are removed, and this '
+      +'cannot be undone. The base CV (main.tex) is never touched.')) return;
+  const r = await api('POST','/api/cvs/delete',{id});
+  if(r.error){ cvStatus(r.error,'bad'); return; }
+  if(currentCvId===id){
+    currentCvId = null;
+    hidePdf('Deleted. Pick another variant.');
+    $('#cv-name').value=''; $('#cv-body').value=''; $('#cv-latex').value='';
+    $('#cv-edit-title').textContent = 'A variant';
+  }
+  cvStatus('Deleted "'+name+'".','good');
+  loadCvs(); loadCvPickers();
 }
 
 async function openBasePdf(){ previewBaseCv(); }
@@ -945,7 +1071,13 @@ async function saveCv(){
   else payload.body = $('#cv-body').value;
   const r = await api('POST','/api/cvs/save', payload);
   if(r.error){ $('#cv-saved').textContent = r.error; return; }
-  if(r.compiled){
+  if(r.variant){
+    $('#cv-body').value = r.variant.body||'';
+    $('#cv-latex').value = r.variant.latex||'';
+  }
+  if(r.words_not_applied){
+    $('#cv-saved').textContent = r.words_not_applied;
+  }else if(r.compiled){
     $('#cv-saved').textContent = r.compiled.ok ? 'saved, PDF rebuilt'
       : 'saved, but the PDF failed: '+(r.compiled.error||'unknown error');
     if(r.compiled.ok) showPdf(currentCvId, 'PDF · recompiled from your edit');
@@ -958,7 +1090,7 @@ async function saveCv(){
 async function newCv(){
   const body = $('#cv-body').value, latex = $('#cv-latex').value||'';
   const r = await api('POST','/api/cvs/create', {name:$('#cv-name').value||'untitled',
-    body, latex, company_id:$('#cv-firm').value||null});
+    body, latex, company_id:$('#tex-firm').value||null});
   if(r.error){ $('#cv-saved').textContent = r.error; return; }
   currentCvId = r.id;
   $('#cv-saved').textContent = 'created';
@@ -966,7 +1098,8 @@ async function newCv(){
 }
 
 async function reviewCv(decision){
-  if(!currentCvId){ $('#cv-saved').textContent = 'pick a variant first'; return; }
+  if(currentCvId===null || currentCvId===undefined){ $('#cv-saved').textContent = 'pick a variant first'; return; }
+  if(currentCvId===0){ $('#cv-saved').textContent = 'the base CV is already yours'; return; }
   if(decision==='validated' && !confirm('Validate this CV? A validated variant can be attached '+
     'to a queued mail. The base CV is never changed either way.')) return;
   const r = await api('POST','/api/cvs/review',{id:currentCvId, decision});
@@ -1046,13 +1179,38 @@ async function loadProfile(){
   $('#p-cv').value = p.cv_text||'';
   $('#cv-preview').innerHTML = ''; $('#cv-result').textContent = '';
   renderGaps(p);
+  renderQuestions(p);
+}
+/* The ten self-written answers. Rendered from the questions the server
+   sends, so the form, the save and the mail prompt all read one list.
+   Answers are stored as a JSON array in question order. */
+function renderQuestions(p){
+  const qs = p.questions || [];
+  let answers = [];
+  try { answers = JSON.parse(p.answers || '[]') || []; } catch(e){ answers = []; }
+  $('#p-questions').innerHTML = qs.length ? qs.map((q,i)=>
+    `<div style="margin-top:10px">
+       <label class="muted" style="font-size:12px">${i+1}. ${esc(q)}</label>
+       <textarea id="p-q-${i}" rows="2" style="width:100%"
+         placeholder="In your own words — the model reads this verbatim.">${esc(answers[i]||'')}</textarea>
+     </div>`).join('')
+    : '<div class="muted">No questions loaded — restart the server to fetch them.</div>';
 }
 async function saveProfile(){
   const b={};
   P_FIELDS.forEach(([k])=>{ if($('#p-'+k)) b[k]=$('#p-'+k).value; });
   b.pitch = $('#p-pitch').value; b.cv_text = $('#p-cv').value;
+  const answers = [];
+  for(let i=0; ; i++){
+    const el = document.getElementById('p-q-'+i);
+    if(!el) break;
+    answers.push(el.value);
+  }
+  if(answers.length) b.answers = JSON.stringify(answers);
   await api('PUT','/api/profile',b);
-  const d=new Date(); $('#psaved').textContent='saved at '+d.toLocaleTimeString();
+  const d=new Date();
+  $('#psaved').textContent='saved at '+d.toLocaleTimeString();
+  $('#pq-saved').textContent='saved at '+d.toLocaleTimeString();
   renderGaps(b); loadDash();
 }
 

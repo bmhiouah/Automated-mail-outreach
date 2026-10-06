@@ -128,16 +128,18 @@ def _cv_attachment(cv_id):
     send, and the preflight refuses that rather than the send quietly dropping
     the attachment and leaving a mail that promised one.
     """
+    if cv_id in (0, "0"):
+        # The base CV is approved by definition - it is your document - but it
+        # still has to exist on disk, or the mail would silently leave without
+        # the attachment it implies. Tested before `not cv_id` because the base
+        # is id 0, which is falsy: the other order drops the CV you wrote
+        # yourself and sends the mail bare.
+        pdf = latex_build.pdf_bytes("data/cvs/main.pdf")
+        return ("base-cv.pdf", pdf) if pdf else ("", b"")
     if not cv_id:
         # No CV chosen: the mail goes out with no attachment at all, which is a
         # decision the sender makes in the picker, not an error.
         return "", b""
-    if cv_id in (0, "0"):
-        # The base CV is approved by definition - it is your document - but it
-        # still has to exist on disk, or the mail would silently leave without
-        # the attachment it implies.
-        pdf = latex_build.pdf_bytes("data/cvs/main.pdf")
-        return ("base-cv.pdf", pdf) if pdf else ("", b"")
     rows = db.query("SELECT name, pdf_path FROM cv_variants "
                     "WHERE id=? AND status='validated'", [cv_id])
     if not rows:
@@ -155,6 +157,24 @@ def _cv_base_summary():
     return {"id": 0, "name": "Base CV (main.tex)", "status": "validated",
             "pdf_path": "data/cvs/main.pdf" if latex_build.pdf_exists(
                 "data/cvs/main.pdf") else ""}
+
+
+def _queue_cv(cv_id):
+    """The CV a queue row carries, in the shape the queue shows.
+
+    Three cases, and the last is why this is a helper rather than an
+    inline lookup: the base CV (id 0) is main.tex and has no row of
+    its own; a real variant is looked up; and a variant deleted since
+    the draft was made reads as no CV instead of crashing the whole
+    queue row on a stale id.
+    """
+    if cv_id in (0, "0"):
+        return dict(_cv_base_summary())
+    if not cv_id:
+        return None
+    rows = db.query("SELECT id, name, status, pdf_path FROM cv_variants "
+                    "WHERE id=?", [cv_id])
+    return dict(rows[0]) if rows else None
 
 
 # ------------------------------------------------------------------ reading
@@ -226,9 +246,7 @@ def api_queue_get(payload):
                      "linkedin_url", "email", "email_source")}
     q["company"] = {k: company.get(k) for k in
                     ("id", "name", "type", "hq_city", "research", "careers_url")}
-    q["cv"] = (dict(_cv_base_summary()) if q.get("cv_id") in (0, "0")
-               else (db.query("SELECT id, name, status, pdf_path FROM cv_variants WHERE id=?",
-                              [q["cv_id"]])[0] if q.get("cv_id") else None))
+    q["cv"] = _queue_cv(q.get("cv_id"))
     # Re-score on read: after an edit the stored grade is stale, and a stale grade
     # shown next to edited text is worse than no grade at all.
     ctx, quality, flags = _ctx_and_scoring(contact, company, q["subject"], q["body"],

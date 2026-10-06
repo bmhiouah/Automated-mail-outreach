@@ -321,6 +321,60 @@ def _rebuild_contacts_if_drifted():
     return False
 
 
+def _mail_queue_has_cv_fk():
+    """True while mail_queue.cv_id still references cv_variants(id).
+
+    cv_id 0 means "the base CV", which is main.tex and lives in
+    profile.cv_text, not in cv_variants - so that FK rejects every
+    draft that attaches the base CV. Read from the live pragma rather
+    than the schema file, because CREATE TABLE IF NOT EXISTS never
+    alters a table that already exists.
+    """
+    for r in query("PRAGMA foreign_key_list(mail_queue)"):
+        if r["table"] == "cv_variants" and r["from"] == "cv_id":
+            return True
+    return False
+
+
+def _rebuild_mail_queue_without_cv_fk():
+    """Rebuild mail_queue so cv_id no longer references cv_variants.
+
+    SQLite cannot drop a single FK constraint in place, so the table is
+    rebuilt the way `contacts` is: same columns, same rows, same ids,
+    one constraint fewer. The two indexes are recreated because dropping
+    the table drops them. Returns True when a rebuild happened.
+    """
+    if not _mail_queue_has_cv_fk():
+        return False
+    conn = connect()
+    try:
+        conn.execute("PRAGMA foreign_keys = OFF")
+        # Build the new shape under a temp name, copy, then swap. The old
+        # table is dropped (never renamed): renaming the referenced table
+        # rewrites other tables' foreign keys and leaves them pointing at
+        # a ghost, whereas a drop keeps their "REFERENCES mail_queue" intact.
+        with open(SCHEMA_PATH, encoding="utf-8") as fh:
+            schema = fh.read()
+        block = schema[schema.index("CREATE TABLE IF NOT EXISTS mail_queue ("):]
+        block = block[:block.index(");") + 2].replace(
+            "CREATE TABLE IF NOT EXISTS mail_queue (",
+            "CREATE TABLE mail_queue_new (")
+        conn.executescript(block)
+        cols = ", ".join(c["name"] for c in query("PRAGMA table_info(mail_queue)"))
+        conn.execute(f"INSERT OR REPLACE INTO mail_queue_new ({cols}) "
+                     f"SELECT {cols} FROM mail_queue")
+        conn.execute("DROP TABLE mail_queue")
+        conn.execute("ALTER TABLE mail_queue_new RENAME TO mail_queue")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_status "
+                     "ON mail_queue(status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_queue_contact "
+                     "ON mail_queue(contact_id)")
+        conn.commit()
+    finally:
+        conn.close()
+    return True
+
+
 def ensure_schema(verbose=False):
     """Create the new tables and add the harvested columns to an existing DB.
 
@@ -339,7 +393,7 @@ def ensure_schema(verbose=False):
                             ["pattern_before TEXT", "pattern_after TEXT"])
     added += ensure_columns("cv_variants", ["latex TEXT", "pdf_path TEXT",
                                             "pdf_at TEXT", "instruction TEXT"])
-    added += ensure_columns("profile", ["cv_instruction TEXT"])
+    added += ensure_columns("profile", ["cv_instruction TEXT", "answers TEXT"])
 
     # The first harvest stored Hunter's verbatim title in `headline`. It belongs
     # in position_raw now that we have a column for it, and moving it means the
@@ -356,6 +410,7 @@ def ensure_schema(verbose=False):
             except sqlite3.OperationalError:
                 pass          # indexed or referenced: leave it, it is harmless
     rebuilt = _rebuild_contacts_if_drifted()
+    rebuilt_queue = _rebuild_mail_queue_without_cv_fk()
     if verbose:
         if added:
             print(f"schema: {len(added)} columns added ({', '.join(added)})")
@@ -363,6 +418,9 @@ def ensure_schema(verbose=False):
             print(f"schema: {len(dropped)} empty columns dropped ({', '.join(dropped)})")
         if rebuilt:
             print("schema: contacts rebuilt in canonical column order")
+        if rebuilt_queue:
+            print("schema: mail_queue rebuilt without the cv_id FK "
+                  "(the base CV is id 0, not a variant row)")
         if moved:
             print(f"schema: position_raw backfilled for {moved} existing contacts")
     return added

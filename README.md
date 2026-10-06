@@ -129,6 +129,14 @@ a tailoring for a given firm and role; it arrives **pending**, you read and edit
 it, and only a **validated** variant can be attached to a queued mail. That gate is
 why an unreviewed document can never go out with your name on it.
 
+The base **`main.tex`** is listed alongside the variants, at the top, labelled
+**me** — it is a CV like any other and is never itself written to. Clicking any row
+opens it and **recompiles it on the spot**, so the preview always reflects your
+latest save rather than whatever last happened to be compiled. **Delete** removes a
+variant and its PDF; it refuses two things, both because the loss would be silent —
+the base document, and a variant an unsent queued mail still points at (detach it in
+the Queue tab first).
+
 ## Writing the mails
 
 Add to `config.json` (or export env vars — the environment wins, so a key need

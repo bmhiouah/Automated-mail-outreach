@@ -385,37 +385,41 @@
                border-radius:8px;background:#fff;margin-top:10px"></iframe>
     </div>
     <div class="card">
-      <h2>Review a variant</h2>
-      <div class="hint">Click a row in the list below, or paste a CV you wrote by hand. Only a
-        <b>validated</b> variant with a compiled PDF can be attached to a queued mail. The base
-        <b>main.tex</b> is never touched — a bad adaptation costs one click, not a rewrite.</div>
+      <h2>Variants <span class="muted" id="cv-count"></span>
+        <span class="muted" id="cv-status" style="font-weight:400"></span></h2>
       <div class="row">
-        <select id="cv-firm" onchange="loadCvs()"></select>
-      </div>
-      <div id="cv-propose-result"></div>
-    </div>
-    <div class="card">
-      <h2>Variants</h2>
-      <div class="row">
-        <input id="cv-search" placeholder="Search name, firm, role…" style="flex:1;min-width:160px"
+        <input id="cv-search" placeholder="Search name, firm, role, model…" style="flex:1;min-width:180px"
                oninput="loadCvs()">
-        <select id="cv-filter-firm" onchange="loadCvs()" style="min-width:180px"></select>
-        <select id="cv-filter-status" onchange="loadCvs()" style="min-width:140px">
+        <select id="cv-filter-firm" onchange="loadCvs()" style="min-width:160px"></select>
+        <select id="cv-filter-status" onchange="loadCvs()" style="min-width:130px">
           <option value="">any status</option>
           <option value="pending">pending</option>
           <option value="validated">validated</option>
           <option value="rejected">rejected</option>
         </select>
+        <select id="cv-filter-made" onchange="loadCvs()" style="min-width:130px">
+          <option value="">anyone</option>
+          <option value="me">made by me</option>
+          <option value="llm">a model</option>
+          <option value="manual">pasted by hand</option>
+        </select>
+        <select id="cv-sort" onchange="loadCvs()" style="min-width:130px">
+          <option value="newest">newest</option>
+          <option value="name">name</option>
+          <option value="firm">firm</option>
+        </select>
       </div>
-      <div class="scroll" style="max-height:260px"><table id="cv-table"></table></div>
-      <div class="hint">A variant must be <b>validated</b> before it can be attached to a queued
-        mail. That gate is why an unreviewed document can never go out with your name on it.</div>
+      <div class="scroll" style="max-height:320px"><table id="cv-table"></table></div>
+      <div class="hint">Your base CV <b>main.tex</b> sits at the top, labelled <b>me</b> — it is
+        listed like any other variant, and it is never overwritten. Clicking a row opens it and
+        <b>recompiles it on the spot</b>, so the preview above always shows your latest save.
+        <b>Delete</b> removes a variant and its PDF. A variant must be <b>validated</b> before it
+        can be attached to a queued mail.</div>
     </div>
     <div class="card">
       <h2 id="cv-edit-title">A variant</h2>
-      <div class="hint">Text edits apply to the words; the LaTeX tab below is the layout.
-        Saving here rebuilds the PDF when the source changed - what you preview
-        afterwards is what mail would attach.</div>
+      <div class="hint">Save writes the LaTeX, then rebuilds the PDF, so the preview matches
+        what you just typed. Word edits are written back into the <code>.tex</code> first.</div>
       <div class="row">
         <input id="cv-name" placeholder="Name this variant" style="flex:1;min-width:240px">
         <button class="ghost" onclick="saveCv()">Save</button>
@@ -465,6 +469,19 @@
         <span class="muted" id="psaved"></span>
       </div>
       <div id="p-gaps"></div>
+    </div>
+    <div class="card">
+      <h2>3 · Ten questions — in your own words</h2>
+      <div class="hint">A CV is a summary written for a stranger, so it leaves out
+        exactly what makes a mail worth reading: the split behind a number, the reason
+        behind a choice, the result that never made a bullet. Answer these yourself —
+        the model reads them verbatim and builds the mail around them. Nothing is
+        inferred for you.</div>
+      <div id="p-questions"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="act" onclick="saveProfile()">Save answers</button>
+        <span class="muted" id="pq-saved"></span>
+      </div>
     </div>
   </section>
 </main>

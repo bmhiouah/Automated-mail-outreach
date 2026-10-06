@@ -125,7 +125,8 @@ def api_cv_propose(payload):
     company, contact = _company_for(payload.get("contact_id"), payload.get("company_id"))
     role = payload.get("role_target") or contact.get("job_title") or ""
     out = llm.generate_cv(contact, company, get_profile(), source,
-                          role_target=role, force=bool(payload.get("force")))
+                          role_target=role, force=bool(payload.get("force")),
+                          model=(payload.get("model") or None))
     if not out.get("ok"):
         return {"error": out.get("error") or "the tailoring failed", "llm": out}
     name = (payload.get("name") or _variant_name(company, role)).strip()
@@ -142,15 +143,41 @@ def api_cv_propose(payload):
 def api_cv_save(payload):
     """Write your own edits to a variant. Marks it edited, not validated.
 
-    When the LaTeX source changed, the PDF is rebuilt immediately: the preview
-    must show what was just written, not what used to be there. A failed build
-    does not undo the text edit - the words are yours, the layout is what broke.
+    Word edits are written back into the LaTeX they came from, then the PDF is
+    rebuilt: the preview must show what was just typed, not what used to be
+    there. A failed build does not undo the text edit - the words are yours,
+    the layout is what broke.
     """
     vid = payload.get("id")
     rows = db.query("SELECT * FROM cv_variants WHERE id=?", [vid])
     if not rows:
         return {"error": "that CV variant no longer exists"}
     before = dict(rows[0])
+    payload = dict(payload)
+    old_latex = before.get("latex") or ""
+    old_body = before.get("body") or ""
+    latex_in = "latex" in payload
+    body_in = "body" in payload
+    new_latex = payload["latex"] if latex_in else old_latex
+    new_body = payload["body"] if body_in else old_body
+    latex_changed = latex_in and new_latex != old_latex
+    body_changed = body_in and new_body != old_body
+    # Words pane is a rendering of the source. If the user edited words and
+    # left the LaTeX tab untouched, patch the .tex so compile sees the edit.
+    unplaceable = False
+    if body_changed and not latex_changed and old_latex.strip():
+        patched = latex_cv.apply_text_edits(old_latex, old_body, new_body)
+        if patched != old_latex:
+            payload["latex"] = patched
+            latex_changed = True
+        else:
+            # The words are still saved - they are the user's - but no phrase
+            # could be placed in the source. Saying so is the point: the PDF is
+            # unchanged, and a save that said "saved, PDF rebuilt" here would be
+            # a lie that costs them the discovery at the attachment.
+            unplaceable = True
+    elif latex_changed and not body_changed:
+        payload["body"] = _text_of(new_latex)
     sets, args = [], []
     for f in CV_FIELDS:
         if f in payload:
@@ -163,7 +190,11 @@ def api_cv_save(payload):
     args.extend([now_iso(), vid])
     db.execute(f"UPDATE cv_variants SET {', '.join(sets)} WHERE id=?", args)
     out = {"variant": api_cv_get({"id": vid})}
-    if "latex" in payload and (payload["latex"] or "") != (before.get("latex") or ""):
+    if unplaceable:
+        out["words_not_applied"] = (
+            "saved, but the change could not be written into the .tex, so the PDF "
+            "is unchanged - make the edit on the LaTeX source tab to see it")
+    if latex_changed:
         compiled = compile_variant(vid)
         out["compiled"] = compiled
         out["variant"] = api_cv_get({"id": vid})
@@ -185,6 +216,44 @@ def api_cv_review(payload):
     db.execute("UPDATE cv_variants SET status=?, reviewed_at=?, updated_at=? WHERE id=?",
                [decision, now_iso(), now_iso(), vid])
     return {"ok": True, "id": vid, "status": decision}
+
+
+def api_cv_delete(payload):
+    """Throw a variant away, along with its compiled PDF.
+
+    Two refusals, both because the loss would otherwise be silent:
+
+      * the base (id 0) is main.tex, which this module never writes to - there
+        is nothing to delete, and offering to would be a lie;
+      * a variant an unsent queued mail still points at. Deleting it would
+        leave the draft attaching nothing, and it would go out bare with no
+        warning. Detaching it in the Queue tab is the visible way to do that.
+
+    A variant only a *sent* mail used may be deleted: the mail is already out,
+    and keeping an unused document around is clutter, not provenance.
+    """
+    vid = payload.get("id")
+    if vid in (0, "0"):
+        return {"error": "the base CV cannot be deleted - it is main.tex, and "
+                         "this tool never writes to it"}
+    rows = db.query("SELECT id, name, pdf_path FROM cv_variants WHERE id=?", [vid])
+    if not rows:
+        return {"error": "that CV variant no longer exists"}
+    held = db.query("SELECT COUNT(*) n FROM mail_queue WHERE cv_id=? "
+                    "AND status<>'sent'", [vid])[0]["n"]
+    if held:
+        return {"error": f"this CV is attached to {held} unsent mail(s) - detach "
+                         "it in the Queue tab first, so a draft cannot go out "
+                         "without the attachment you chose"}
+    removed = latex_build.remove_variant_files(vid, rows[0]["pdf_path"])
+    db.execute("DELETE FROM cv_variants WHERE id=?", [vid])
+    # mail_queue.cv_id carries no foreign key (the base CV is id 0, not a
+    # variant row, so a FK would reject every base-CV draft). The cascade a
+    # deleted variant used to get from the FK is done here instead: only sent
+    # mails can still point at it - unsent ones were refused above - and those
+    # are already out, so their link to the deleted document is history.
+    db.execute("UPDATE mail_queue SET cv_id=NULL WHERE cv_id=?", [vid])
+    return {"ok": True, "id": vid, "name": rows[0]["name"], "removed": removed}
 
 
 def api_cv_create(payload):
@@ -375,7 +444,8 @@ def api_cv_pdf(vid):
                    "text/plain; charset=utf-8")
     fname = latex_build.slugify(rows[0]["name"]) + ".pdf"
     return Raw(data, "application/pdf",
-               {"Content-Disposition": f'inline; filename="{fname}"'})
+               {"Content-Disposition": f'inline; filename="{fname}"',
+                "Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
 def api_cv_base_pdf(params):
@@ -393,7 +463,8 @@ def api_cv_base_pdf(params):
         return Raw(b"Compiled, but the PDF could not be read back.",
                    "text/plain; charset=utf-8")
     return Raw(data, "application/pdf",
-               {"Content-Disposition": 'inline; filename="main.pdf"'})
+               {"Content-Disposition": 'inline; filename="main.pdf"',
+                "Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
 def _base_variant():
@@ -406,10 +477,12 @@ def _base_variant():
     which is the whole reason a bad run costs nothing.
     """
     base = latex_build.base_tex()
-    return {"id": 0, "name": "Base CV (main.tex)", "body": _text_of(base),
+    body = _text_of(base)
+    return {"id": 0, "name": "Base CV (main.tex)", "body": body,
             "latex": base, "status": "validated", "generation": "you",
             "role_target": "", "firm": "", "first_name": "", "last_name": "",
             "company_id": None, "contact_id": None, "parent_id": None,
+            "used_by": 0, "bytes": len(body), "latex_bytes": len(base),
             "pdf_path": "data/cvs/main.pdf", "stale": not latex_build.pdf_exists(
                 "data/cvs/main.pdf"), "pdf_url": "/api/cvs/base-pdf"}
 
@@ -434,4 +507,5 @@ ROUTES = [
     ("POST", "cvs/create", lambda p, rest, body: api_cv_create(body)),
     ("POST", "cvs/save", lambda p, rest, body: api_cv_save(body)),
     ("POST", "cvs/review", lambda p, rest, body: api_cv_review(body)),
+    ("POST", "cvs/delete", lambda p, rest, body: api_cv_delete(body)),
 ]

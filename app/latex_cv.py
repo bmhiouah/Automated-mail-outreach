@@ -15,6 +15,7 @@ contains a nested group, so `\{(.*?)\}` stops at the first closing brace, eats
 did exactly that and lost a line from every role that had bold text in its first
 bullet.
 """
+import difflib
 import re
 
 
@@ -206,6 +207,157 @@ def latex_to_text(src):
     text = re.sub(r" *\n *", "\n", text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+_LATEX_SPECIALS = {
+    "\\": r"\textbackslash{}",
+    "&": r"\&",
+    "%": r"\%",
+    "$": r"\$",
+    "#": r"\#",
+    "_": r"\_",
+    "{": r"\{",
+    "}": r"\}",
+}
+
+
+def _escape_latex(text):
+    """Plain-text characters that would otherwise be TeX commands."""
+    return "".join(_LATEX_SPECIALS.get(ch, ch) for ch in (text or ""))
+
+
+def _forms(phrase):
+    """The phrase as typed, and as the source spells it. Ampersands differ.
+
+    The words pane shows `&` where the source writes `\\&`, `100%` where it
+    writes `100\\%`. Searching for the typed form alone therefore fails on any
+    sentence containing one, and the anchor silently degrades to a shorter -
+    or more ambiguous - phrase.
+    """
+    escaped = _escape_latex(phrase)
+    return (phrase,) if escaped == phrase else (phrase, escaped)
+
+
+def _find_unique(src, phrase):
+    """(start, length) of the only occurrence of `phrase` in `src`, else None.
+
+    Uniqueness is the whole safety property here. A CV repeats itself - "Power
+    BI" twice, "Experience" twice, a job title in a summary and in a heading -
+    and patching the first match would edit a sentence the user never touched,
+    then compile it and call it success. Nothing is placed without this.
+    """
+    if not phrase.strip():
+        return None
+    for form in _forms(phrase):
+        if src.count(form) == 1:
+            return src.index(form), len(form)
+    return None
+
+
+def _seam(left, right):
+    """One space between two pieces of a sentence, unless one supplies it.
+
+    The diff decides which side of the junction a space belongs to, so the side
+    the user did not type may already carry it. Adding a second is harmless -
+    both TeX and latex_to_text collapse runs - but a lone space is what keeps
+    "quant2" from becoming one token when the addition is a bare word.
+    """
+    if left and right and not left[-1:].isspace() and not right[:1].isspace():
+        return " "
+    return ""
+
+
+_MAX_CONTEXT_WORDS = 8
+
+
+def _place(src, text, i1, i2, addition):
+    """Put `addition` where `text[i1:i2]` sits in `src`, or leave src alone.
+
+    The changed words are rarely unique on their own, so the window around them
+    grows outwards one word at a time - closest neighbour first - until it
+    matches in exactly one place. The window is replaced wholesale, which is why
+    a deleted sentence and an added one are the same operation.
+
+    Returns src unchanged when no window is unique, and that is the honest
+    outcome: the caller tells the user the .tex did not move, which they can fix
+    on the source tab, rather than a wrong line being silently rewritten.
+    """
+    spans = [(m.start(), m.end()) for m in re.finditer(r"\S+", text)]
+    if not spans:
+        return src
+    n = len(spans)
+    lo = 0
+    while lo < n and spans[lo][1] <= i1:
+        lo += 1
+    hi = lo
+    while hi + 1 < n and spans[hi + 1][0] < i2:
+        hi += 1
+    # An insertion at the very end has no word after it; anchor on the last one.
+    lo, hi = min(lo, n - 1), min(hi, n - 1)
+    if hi < lo:
+        hi = lo
+    base = hi - lo + 1
+    for extra in range(min(_MAX_CONTEXT_WORDS, n - base) + 1):
+        width = base + extra
+        for left in range(lo, max(-1, lo - extra) - 1, -1):
+            right = left + width - 1
+            if right > n - 1 or right < hi:
+                continue
+            a, b = spans[left][0], spans[right][1]
+            found = _find_unique(src, text[a:b])
+            if not found:
+                continue
+            at, length = found
+            new_win = (text[a:i1] + _seam(text[a:i1], addition) + addition
+                       + _seam(addition, text[i2:b]) + text[i2:b])
+            return (src[:at] + _seam(src[:at], new_win) + new_win
+                    + src[at + length:])
+    return src
+
+
+_WORD = re.compile(r"\S+")
+
+
+def _word_edits(old_text, new_text):
+    """(start, end, replacement) per changed run of words.
+
+    The diff runs over words, not characters. A character diff of "Mhiouah" ->
+    "Benali" reports an insert and a delete that share no anchor, and each has
+    to be placed on its own; over words it is one edit with a whole word around
+    it, which is the granularity the words pane was typed at anyway.
+    """
+    old_spans = [(m.start(), m.end()) for m in _WORD.finditer(old_text)]
+    new_words = [m.group(0) for m in _WORD.finditer(new_text)]
+    old_words = [old_text[a:b] for a, b in old_spans]
+    out = []
+    for tag, i, j, k, l in difflib.SequenceMatcher(
+            None, old_words, new_words, autojunk=False).get_opcodes():
+        if tag == "equal":
+            continue
+        start = old_spans[i][0] if i < len(old_spans) else len(old_text)
+        end = old_spans[j - 1][1] if j > i else start
+        out.append((start, end, " ".join(new_words[k:l])))
+    return out
+
+
+def apply_text_edits(latex, old_text, new_text):
+    """Write word-level edits back into the LaTeX they came from.
+
+    The words pane is a rendering of the source. Saving it has to update the
+    `.tex` (and then the PDF) or the preview keeps showing the previous run.
+
+    Edits are applied right to left, so each one is located in the source as it
+    stands before any later edit has moved the text around, and each is placed
+    only where its context is unique - see `_place`. An edit that cannot be
+    placed with certainty is skipped rather than guessed into the wrong macro.
+    """
+    if not latex or (old_text or "") == (new_text or ""):
+        return latex or ""
+    out = latex
+    for start, end, replacement in reversed(_word_edits(old_text or "", new_text or "")):
+        addition = _escape_latex(replacement) if replacement.strip() else ""
+        out = _place(out, old_text or "", start, end, addition)
+    return out
 
 
 if __name__ == "__main__":

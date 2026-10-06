@@ -35,6 +35,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import db    # noqa: E402
 import net   # noqa: E402
+import taxonomy  # noqa: E402
 
 CONFIG_PATH = os.path.join(db.BASE, "config.json")
 
@@ -501,6 +502,37 @@ def _firm_activity(company):
     return "; ".join(bits)
 
 
+def _own_words(profile):
+    """The writer's own answers to the ten profile questions.
+
+    These are the richest facts available: written by the candidate,
+    for exactly this purpose, so they carry the split behind a number
+    and the reason behind a choice that a CV summary leaves out. Each
+    answer is shown with its question, because an answer without its
+    question is a fact the model cannot weigh.
+    """
+    try:
+        answers = json.loads(profile.get("answers") or "[]")
+    except (ValueError, TypeError):
+        answers = []
+    if not isinstance(answers, list):
+        return ""
+    lines = ["In the writer's own words (the ten questions they "
+             "answered for exactly this - treat as the richest "
+             "facts here):"]
+    any_answer = False
+    for i, a in enumerate(answers):
+        a = " ".join(str(a or "").split())
+        if not a:
+            continue
+        any_answer = True
+        q = (taxonomy.PROFILE_QUESTIONS[i]
+             if i < len(taxonomy.PROFILE_QUESTIONS)
+             else f"Question {i + 1}")
+        lines.append(f"{i + 1}. {q} -> {a[:400]}")
+    return "\n".join(lines) if any_answer else ""
+
+
 def _facts_block(contact, company, profile):
     """Everything the model may use, as a labelled, explicitly-closed block.
 
@@ -554,6 +586,7 @@ def _facts_block(contact, company, profile):
         _line("Languages", profile.get("languages")),
         _line("Availability", profile.get("availability")),
         _line("One-line pitch", profile.get("pitch"), 400),
+        _own_words(profile),
         _line("Contact details for the signature", phone and
               f"{phone} | {profile.get('linkedin') or ''}"),
     ])
@@ -660,7 +693,8 @@ CV_SYSTEM_PROMPT = (
 )
 
 
-def generate_cv(contact, company, profile, base_cv, role_target="", force=False):
+def generate_cv(contact, company, profile, base_cv, role_target="", force=False,
+                model=None):
     """Tailor the CV to one opportunity. Proposes; never overwrites `base_cv`.
 
     The base document is passed whole and returned untouched, and the system
@@ -689,7 +723,8 @@ def generate_cv(contact, company, profile, base_cv, role_target="", force=False)
         "",
         "Return the tailored CV as plain text in the JSON body field.",
     ])
-    return chat(prompt, system=CV_SYSTEM_PROMPT, max_tokens=2000, force=force)
+    return chat(prompt, system=CV_SYSTEM_PROMPT, max_tokens=2000, force=force,
+                model=model)
 
 
 CV_LATEX_SYSTEM_PROMPT = (
