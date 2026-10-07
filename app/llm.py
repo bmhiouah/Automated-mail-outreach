@@ -824,7 +824,7 @@ CV_LATEX_SYSTEM_PROMPT = (
 
 def generate_cv_latex(contact, company, profile, base_tex, instruction,
                       role_target="", force=False, model=None):
-    """Tailor `main.tex` to one opportunity. Returns the model's reply.
+    """Tailor `Badre_Mhiouah_CV.tex` to one opportunity. Returns the model's reply.
 
     The instruction is what the user actually typed in the CVs tab, so it is
     given the top of the prompt: a standing spec ("drop the teaching section,
@@ -854,7 +854,7 @@ def generate_cv_latex(contact, company, profile, base_tex, instruction,
         "",
         "BASE LaTeX DOCUMENT - all of it, verbatim. This is the master file:",
         "---",
-        (base_tex or "")[:60000] or "(no main.tex on file)",
+        (base_tex or "")[:60000] or "(no Badre_Mhiouah_CV.tex on file)",
         "---",
         "",
         "Return the whole document as LaTeX in the JSON body field.",

@@ -13,9 +13,12 @@ from .harness import bootstrap  # noqa: E402
 
 import db
 import json
+import latex_build
 import latex_cv
 import llm
 import mailer
+import shutil
+import tempfile
 import unittest
 
 from api import queue
@@ -196,6 +199,40 @@ class TestDrafting(QueueFixture):
         finally:
             llm.is_configured, llm.generate_mail = original_cfg, original_gen
         self.assertIn("the model is down", r["error"])
+
+    def test_a_draft_carries_the_base_cv_by_default(self):
+        """The base CV is always here, so it is the default
+        attachment: a draft made without choosing a CV still
+        carries it, and the mail's 'CV included' line is true."""
+        row = self.draft()
+        self.assertEqual(row["cv_id"], 0)
+
+    def test_a_chosen_cv_stays_chosen(self):
+        vid = db.execute("INSERT INTO cv_variants (name,body,status) "
+                         "VALUES ('chosen','tailored text','validated')")
+        row = self.draft(cv_id=vid)
+        self.assertEqual(row["cv_id"], vid)
+
+    def test_a_base_cv_draft_without_its_pdf_is_blocked(self):
+        """cv_id 0 is falsy, and `bool(cv_id)` used to read a
+        base-CV draft as bare - so the 'compile the PDF first'
+        refusal never fired and a mail promising a CV could go
+        out without one."""
+        row = self.draft()
+        self.assertEqual(row["cv_id"], 0)
+        saved = latex_build.CV_DIR
+        empty = tempfile.mkdtemp(prefix="nocv-")
+        latex_build.CV_DIR = empty
+        try:
+            listed = queue.api_queue_get({"id": row["id"]})
+            self.assertFalse(listed["cv_has_pdf"])
+            self.assertTrue(any("no PDF" in b for b in listed["blocking"]),
+                            listed["blocking"])
+        finally:
+            latex_build.CV_DIR = saved
+            shutil.rmtree(empty, ignore_errors=True)
+
+
 class TestEditing(QueueFixture):
     def test_edits_are_kept_and_flagged(self):
         row = self.draft()

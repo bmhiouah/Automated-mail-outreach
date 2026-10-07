@@ -5,11 +5,35 @@ from .harness import bootstrap  # noqa: E402
 
 import api
 import server
+import shutil
+import tempfile
 import unittest
+
+# The route walk below dispatches EVERY route with an
+# empty body, and one of them is POST /api/cvs/base-compile:
+# taken for real, that compiles Badre_Mhiouah_CV.tex and rewrites
+# data/cvs/Badre_Mhiouah_CV.pdf on every test run. The compiler is
+# pointed at a throwaway directory for the length of the
+# module, the same guard test_cvs.py uses.
+_REAL_CV_DIR = None
+_TMP_CV_DIR = None
 
 
 def setUpModule():
+    global _REAL_CV_DIR, _TMP_CV_DIR
     bootstrap()
+    import latex_build
+    _REAL_CV_DIR = latex_build.CV_DIR
+    _TMP_CV_DIR = tempfile.mkdtemp(prefix="apitest-")
+    latex_build.CV_DIR = _TMP_CV_DIR
+
+
+def tearDownModule():
+    import latex_build
+    if _REAL_CV_DIR is not None:
+        latex_build.CV_DIR = _REAL_CV_DIR
+    if _TMP_CV_DIR:
+        shutil.rmtree(_TMP_CV_DIR, ignore_errors=True)
 
 class TestApiDispatch(unittest.TestCase):
     """The route table is the API's contract with the UI.

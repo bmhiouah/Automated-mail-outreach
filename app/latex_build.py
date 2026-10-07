@@ -1,4 +1,4 @@
-"""main.tex -> a PDF, so a tailored CV can leave the app as the thing you send.
+"""Badre_Mhiouah_CV.tex -> a PDF, so a tailored CV can leave the app as the thing you send.
 
 The notebook did this in four lines and died on the first typo: pdflatex exits
 non-zero, the exception escapes, and the generated .tex is left on disk with no
@@ -9,7 +9,7 @@ one unbalanced brace must not take the request down with it.
 Two details that matter:
 
   * The compiler runs with the project root as its working directory, so an
-    `\\input{...}` in main.tex resolves the same way it does when you compile
+    `\\input{...}` in Badre_Mhiouah_CV.tex resolves the same way it does when you compile
     it by hand. Output goes to a temp directory and only the PDF is kept.
   * Files live in data/cvs/ and every read is re-checked against that
     directory, because the path arrives from a database row that a name edit
@@ -25,7 +25,7 @@ import tempfile
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CV_DIR = os.path.join(BASE, "data", "cvs")
 CONFIG_PATH = os.path.join(BASE, "config.json")
-DEFAULT_TEX = "main.tex"
+DEFAULT_TEX = "Badre_Mhiouah_CV.tex"
 SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
@@ -103,7 +103,7 @@ def ensure_document(tex, base):
     Three cases, because all three happen:
 
       * a complete document - used as is;
-      * just the body (no \\documentclass) - main.tex's preamble is prepended,
+      * just the body (no \\documentclass) - the base CV's preamble is prepended,
         which is what actually protects the document class, the packages and
         the custom macros from being "tidied up" by the model;
       * a body that already opens \\begin{document} - preamble prefixed, no

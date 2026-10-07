@@ -47,7 +47,7 @@ def real_cv_dir():
 
     The module points CV_DIR at a throwaway directory so no test can write or
     delete a document you own. The base-CV attachment tests still have to read
-    the real main.pdf, and pdf_bytes() checks the path against CV_DIR - so they
+    the real Badre_Mhiouah_CV.pdf, and pdf_bytes() checks the path against CV_DIR - so they
     ask for the real directory explicitly, and only to read.
     """
     import latex_build
@@ -189,20 +189,21 @@ class TestValidation(CvFixture):
 
     def test_the_base_reads_like_a_variant(self):
         v = cvs.api_cv_get({"id": 0})
-        self.assertEqual(v["name"], "Base CV (main.tex)")
+        self.assertEqual(v["name"], "Badre_Mhiouah_CV")
         self.assertTrue((v["latex"] or "").strip())
 
     def test_the_base_can_be_attached(self):
         """Your own document needs no review gate - but it needs a real PDF."""
         with real_cv_dir():
             fname, pdf = queue._cv_attachment(0)
-        self.assertTrue(fname.endswith(".pdf"))
+        self.assertEqual(fname, "Badre_Mhiouah_CV.pdf")
+        self.assertTrue(pdf)
 
     def test_a_mail_with_a_compilable_cv_passes(self):
         """The mirror of the PDF rule: a variant WITH a PDF is not blocked."""
         vid = cvs.api_cv_create(
             {"name": "compiled", "body": "CV text"})["id"]
-        db.execute("UPDATE cv_variants SET status='validated', pdf_path='data/cvs/main.pdf' "
+        db.execute("UPDATE cv_variants SET status='validated', pdf_path='data/cvs/Badre_Mhiouah_CV.pdf' "
                    "WHERE id=?", [vid])
         with real_cv_dir():
             fname, pdf = queue._cv_attachment(vid)

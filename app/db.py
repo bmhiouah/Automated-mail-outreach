@@ -324,7 +324,7 @@ def _rebuild_contacts_if_drifted():
 def _mail_queue_has_cv_fk():
     """True while mail_queue.cv_id still references cv_variants(id).
 
-    cv_id 0 means "the base CV", which is main.tex and lives in
+    cv_id 0 means "the base CV", which is Badre_Mhiouah_CV.tex and lives in
     profile.cv_text, not in cv_variants - so that FK rejects every
     draft that attaches the base CV. Read from the live pragma rather
     than the schema file, because CREATE TABLE IF NOT EXISTS never

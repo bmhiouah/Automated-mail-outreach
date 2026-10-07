@@ -277,7 +277,7 @@ CREATE TABLE IF NOT EXISTS profile (
   -- the split behind a number and the reason behind a choice; these
   -- answers carry what a mail is actually built from.
   answers       TEXT,
-  -- The standing instruction for tailoring main.tex. Saved rather than retyped
+  -- The standing instruction for tailoring Badre_Mhiouah_CV.tex. Saved rather than retyped
   -- because it is the actual specification of what you want changed, and the
   -- same wording is what makes two variants comparable.
   cv_instruction TEXT,
@@ -334,7 +334,7 @@ CREATE TABLE IF NOT EXISTS mail_queue (
   addr_kind     TEXT DEFAULT 'none',
   template_id   INTEGER REFERENCES templates(id) ON DELETE SET NULL,
   -- No FK to cv_variants(id) on purpose: cv_id 0 means "the base CV",
-  -- which is main.tex and lives in profile.cv_text, not in this table.
+  -- which is Badre_Mhiouah_CV.tex and lives in profile.cv_text, not in this table.
   -- A FK would reject every draft that attaches the base CV. A deleted
   -- variant is handled by api_cv_delete nulling the queue rows that
   -- pointed at it, and the read path treats a missing variant as no CV.

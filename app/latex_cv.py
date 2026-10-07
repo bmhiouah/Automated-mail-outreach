@@ -362,5 +362,5 @@ def apply_text_edits(latex, old_text, new_text):
 
 if __name__ == "__main__":
     import sys
-    path = sys.argv[1] if len(sys.argv) > 1 else "main.tex"
+    path = sys.argv[1] if len(sys.argv) > 1 else "Badre_Mhiouah_CV.tex"
     print(latex_to_text(open(path, encoding="utf-8", errors="replace").read()))

@@ -494,7 +494,7 @@ async function openQueueRow(id){
   $('#q-subject').value = q.subject||'';
   $('#q-body').value = q.body||'';
   $('#q-cvrow').style.display = 'flex';
-  $('#q-cv').value = q.cv_id||'';
+  $('#q-cv').value = q.cv_id ?? '';
 
   // The two things standing between this draft and a real person, both shown
   // before the button rather than after a refusal.
@@ -725,19 +725,20 @@ async function loadCvPickers(){
   // Only validated variants appear here: this is the picker that decides what
   // gets attached to a real mail, so the status filter is the gate, not a nicety.
   // The base CV (id 0) comes first: it is your own document, so no review gate
-  // is needed - only the compiled PDF. The first option is deliberately "no
-  // attachment" rather than the base, because attaching is a decision per mail.
+  // is needed - only the compiled PDF. It is also the default, because it is
+  // always here: a draft carries it unless you pick something else. "No
+  // attachment" stays selectable for a mail that should go out bare.
   const base = cvs.variants.find(v=>v.id===0);
   const ok = cvs.variants.filter(v=>v.id!==0 && v.status==='validated');
   const tag = v => (v.pdf_path ? ' · PDF' : ' · no PDF');
   const opt = '<option value="">No attachment</option>'
-    + (base ? `<option value="0">Base CV (main.tex)${base.pdf_path?' · PDF':' · no PDF'}</option>` : '')
+    + (base ? `<option value="0" selected>${esc(base.name)}${tag(base)}</option>` : '')
     + ok.map(v=>`<option value="${v.id}">${esc(v.name)}${tag(v)}</option>`).join('');
   $('#q-cv').innerHTML = opt;
   $('#q-draft-cv').innerHTML = opt;
 }
 
-/* ---------- LaTeX CV: main.tex -> PDF ---------- */
+/* ---------- LaTeX CV: Badre_Mhiouah_CV.tex -> PDF ---------- */
 let texInstructionLoaded = false;
 
 async function loadCvInstruction(){
@@ -928,14 +929,14 @@ async function loadCvs(){
         ? '<span class="tag good">me</span>'
         : `<span class="muted">${esc(cvMadeBy(v))}</span>`}</td>
       <td>${v.id===0
-        ? '<span class="muted" title="main.tex is your master document and is never deleted">—</span>'
+        ? '<span class="muted" title="Badre_Mhiouah_CV.tex is your master document and is never deleted">—</span>'
         : `<button class="ghost sm" title="Delete this variant and its compiled PDF"
              onclick="deleteCv(event, ${v.id})">Delete</button>`}</td>
     </tr>`).join('')+'</tbody>';
 }
 
 function showBasePdf(){
-  showPdf(0, 'The base — main.tex, compiled just now.');
+  showPdf(0, 'The base — Badre_Mhiouah_CV.tex, compiled just now.');
 }
 
 async function previewBaseCv(){
@@ -966,7 +967,7 @@ function setCvEditor(mode){
 async function recompileAndShow(id, v){
   const name = (v && v.name) || ('variant '+id);
   if(id===0){
-    showPdf(0, 'The base — main.tex, compiled just now.');
+    showPdf(0, 'The base — Badre_Mhiouah_CV.tex, compiled just now.');
     revealPreview();
     return;
   }
@@ -1012,7 +1013,7 @@ async function openCv(id){
     $('#cv-edit-title').innerHTML = 'Editing: <span class="muted">'+esc(v.name)+'</span>';
     $('#cv-saved').textContent = '';
     $('#cv-editor-hint').textContent = v.id===0
-      ? 'main.tex itself. It cannot be saved from here - edit the file, then Recompile.'
+      ? 'Badre_Mhiouah_CV.tex itself. It cannot be saved from here - edit the file, then Recompile.'
       : '';
     loadCvs();                              // highlight the row straight away
     await recompileAndShow(id, v);
@@ -1039,13 +1040,13 @@ function cvStatus(text, kind){
 async function deleteCv(ev, id){
   if(ev && ev.stopPropagation) ev.stopPropagation();
   if(id===0){
-    cvStatus('The base CV cannot be deleted — it is main.tex.','bad');
+    cvStatus('The base CV cannot be deleted — it is Badre_Mhiouah_CV.tex.','bad');
     return;
   }
   const v = await api('POST','/api/cvs/get',{id});
   const name = (v && v.name) || ('variant '+id);
   if(!confirm('Delete "'+name+'"?\n\nIts compiled PDF and .tex are removed, and this '
-      +'cannot be undone. The base CV (main.tex) is never touched.')) return;
+      +'cannot be undone. The base CV (Badre_Mhiouah_CV.tex) is never touched.')) return;
   const r = await api('POST','/api/cvs/delete',{id});
   if(r.error){ cvStatus(r.error,'bad'); return; }
   if(currentCvId===id){
@@ -1062,7 +1063,7 @@ async function openBasePdf(){ previewBaseCv(); }
 
 async function saveCv(){
   if(currentCvId===0){
-    $('#cv-saved').textContent = 'main.tex cannot be saved from here - edit the file, then Recompile';
+    $('#cv-saved').textContent = 'Badre_Mhiouah_CV.tex cannot be saved from here - edit the file, then Recompile';
     return;
   }
   if(!currentCvId){ newCv(); return; }

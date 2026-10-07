@@ -134,8 +134,8 @@ def _cv_attachment(cv_id):
         # the attachment it implies. Tested before `not cv_id` because the base
         # is id 0, which is falsy: the other order drops the CV you wrote
         # yourself and sends the mail bare.
-        pdf = latex_build.pdf_bytes("data/cvs/main.pdf")
-        return ("base-cv.pdf", pdf) if pdf else ("", b"")
+        pdf = latex_build.pdf_bytes("data/cvs/Badre_Mhiouah_CV.pdf")
+        return ("Badre_Mhiouah_CV.pdf", pdf) if pdf else ("", b"")
     if not cv_id:
         # No CV chosen: the mail goes out with no attachment at all, which is a
         # decision the sender makes in the picker, not an error.
@@ -154,16 +154,16 @@ def _cv_base_summary():
     Same shape as the variant query so the badges and flags below do not need
     to know which of the two they are looking at.
     """
-    return {"id": 0, "name": "Base CV (main.tex)", "status": "validated",
-            "pdf_path": "data/cvs/main.pdf" if latex_build.pdf_exists(
-                "data/cvs/main.pdf") else ""}
+    return {"id": 0, "name": "Badre_Mhiouah_CV", "status": "validated",
+            "pdf_path": "data/cvs/Badre_Mhiouah_CV.pdf" if latex_build.pdf_exists(
+                "data/cvs/Badre_Mhiouah_CV.pdf") else ""}
 
 
 def _queue_cv(cv_id):
     """The CV a queue row carries, in the shape the queue shows.
 
     Three cases, and the last is why this is a helper rather than an
-    inline lookup: the base CV (id 0) is main.tex and has no row of
+    inline lookup: the base CV (id 0) is Badre_Mhiouah_CV.tex and has no row of
     its own; a real variant is looked up; and a variant deleted since
     the draft was made reads as no CV instead of crashing the whole
     queue row on a stale id.
@@ -253,7 +253,9 @@ def api_queue_get(payload):
                                            _cv_text(q.get("cv_id")))
     q["quality"] = quality
     q["flags"] = flags
-    cv_attached = bool(q.get("cv_id"))
+    # cv_id 0 (the base CV) is falsy but attached; bool(0)
+    # would read the draft as bare and skip the PDF check.
+    cv_attached = q.get("cv_id") not in (None, "")
     q["cv_has_pdf"] = bool(q["cv"] and latex_build.pdf_exists(q["cv"].get("pdf_path")))
     q["blocking"] = mailer.preflight(q.get("to_addr"), q.get("subject"), q.get("body"),
                                      q.get("addr_kind") or KIND_NONE,
@@ -442,6 +444,13 @@ def api_draft(payload):
         return {"error": "The model is not usable, so nothing was drafted. " + why,
                 "llm": st, "needs_key": True}
     cv_id = payload.get("cv_id")
+    if cv_id is None or cv_id == "":
+        # The base CV is the default attachment: it is always
+        # here, so a draft carries it unless a specific variant
+        # is chosen. A mail that should go out bare is made by
+        # editing the row afterwards - the per-draft picker
+        # still offers "No attachment".
+        cv_id = 0
     cv_text = _cv_text(cv_id)
     # The model can be chosen per batch, and it is recorded on every row, so a
     # reply rate can later be split by which model wrote the mail.
@@ -583,7 +592,9 @@ def api_validate(payload):
     addr_kind = payload.get("addr_kind") or q.get("addr_kind") or KIND_NONE
     cv_text = _cv_text(q.get("cv_id"))
     cv_name, cv_pdf = _cv_attachment(q.get("cv_id"))
-    cv_attached = bool(q.get("cv_id"))
+    # cv_id 0 (the base CV) is falsy but attached; bool(0)
+    # would read the draft as bare and skip the PDF check.
+    cv_attached = q.get("cv_id") not in (None, "")
 
     problems = mailer.preflight(q.get("to_addr"), q.get("subject"), q.get("body"),
                                 addr_kind,

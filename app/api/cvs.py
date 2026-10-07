@@ -88,7 +88,7 @@ def api_cv_list(params):
 
 def api_cv_get(payload):
     if payload.get("id") == 0:
-        # The base CV is not stored as a variant: it IS main.tex. Anything the
+        # The base CV is not stored as a variant: it IS Badre_Mhiouah_CV.tex. Anything the
         # UI shows for it (LaTeX editor, compiled PDF) is read or built live.
         v = _base_variant()
         v["stale"] = (not v.get("pdf_path")) or not latex_build.pdf_exists(
@@ -223,7 +223,7 @@ def api_cv_delete(payload):
 
     Two refusals, both because the loss would otherwise be silent:
 
-      * the base (id 0) is main.tex, which this module never writes to - there
+      * the base (id 0) is Badre_Mhiouah_CV.tex, which this module never writes to - there
         is nothing to delete, and offering to would be a lie;
       * a variant an unsent queued mail still points at. Deleting it would
         leave the draft attaching nothing, and it would go out bare with no
@@ -234,7 +234,7 @@ def api_cv_delete(payload):
     """
     vid = payload.get("id")
     if vid in (0, "0"):
-        return {"error": "the base CV cannot be deleted - it is main.tex, and "
+        return {"error": "the base CV cannot be deleted - it is Badre_Mhiouah_CV.tex, and "
                          "this tool never writes to it"}
     rows = db.query("SELECT id, name, pdf_path FROM cv_variants WHERE id=?", [vid])
     if not rows:
@@ -365,7 +365,7 @@ def compile_variant(vid):
 
 
 def api_cv_latex_propose(payload):
-    """main.tex + your instruction -> a new variant, compiled to a PDF.
+    """Badre_Mhiouah_CV.tex + your instruction -> a new variant, compiled to a PDF.
 
     The base document is read fresh and never written; the variant carries the
     LaTeX, the plain-text rendering of it, and the instruction that produced it,
@@ -403,7 +403,7 @@ def api_cv_latex_propose(payload):
     tex = latex_build.ensure_document(out.get("body") or "", base)
     if not tex.strip():
         return {"error": "the model returned neither a complete document nor a "
-                         "body I can attach to main.tex - try again"}
+                         "body I can attach to Badre_Mhiouah_CV.tex - try again"}
 
     name = (payload.get("name") or _variant_name(company, role)).strip()
     new_id = db.execute(
@@ -452,18 +452,18 @@ def api_cv_base_pdf(params):
     """The base document, compiled on demand. Never stored: it is the source."""
     base = latex_build.base_tex()
     if not base.strip():
-        return Raw(b"main.tex is missing - nothing to show.",
+        return Raw(b"Badre_Mhiouah_CV.tex is missing - nothing to show.",
                    "text/plain; charset=utf-8")
-    res = latex_build.compile_latex(base, "main")
+    res = latex_build.compile_latex(base, "Badre_Mhiouah_CV")
     if not res.get("ok"):
-        return Raw(("main.tex does not compile:\n\n" + (res.get("error") or "")
+        return Raw(("Badre_Mhiouah_CV.tex does not compile:\n\n" + (res.get("error") or "")
                     ).encode("utf-8"), "text/plain; charset=utf-8")
     data = latex_build.pdf_bytes(res["pdf"])
     if not data:
         return Raw(b"Compiled, but the PDF could not be read back.",
                    "text/plain; charset=utf-8")
     return Raw(data, "application/pdf",
-               {"Content-Disposition": 'inline; filename="main.pdf"',
+               {"Content-Disposition": 'inline; filename="Badre_Mhiouah_CV.pdf"',
                 "Cache-Control": "no-store, no-cache, must-revalidate"})
 
 
@@ -473,23 +473,23 @@ def _base_variant():
     Always id 0, always 'made by you', always compiled on demand. The mail gate
     needs (validated, compiled) before anything can be attached, so the base is
     offered as already approved - the compile step is what makes it sendable.
-    This dict is built live from main.tex: main.tex is never itself written to,
+    This dict is built live from Badre_Mhiouah_CV.tex: it is never itself written to,
     which is the whole reason a bad run costs nothing.
     """
     base = latex_build.base_tex()
     body = _text_of(base)
-    return {"id": 0, "name": "Base CV (main.tex)", "body": body,
+    return {"id": 0, "name": "Badre_Mhiouah_CV", "body": body,
             "latex": base, "status": "validated", "generation": "you",
             "role_target": "", "firm": "", "first_name": "", "last_name": "",
             "company_id": None, "contact_id": None, "parent_id": None,
             "used_by": 0, "bytes": len(body), "latex_bytes": len(base),
-            "pdf_path": "data/cvs/main.pdf", "stale": not latex_build.pdf_exists(
-                "data/cvs/main.pdf"), "pdf_url": "/api/cvs/base-pdf"}
+            "pdf_path": "data/cvs/Badre_Mhiouah_CV.pdf", "stale": not latex_build.pdf_exists(
+                "data/cvs/Badre_Mhiouah_CV.pdf"), "pdf_url": "/api/cvs/base-pdf"}
 
 
 def api_cv_base_compile(payload):
-    """Compile main.tex itself, after it was edited by hand elsewhere."""
-    res = latex_build.compile_latex(latex_build.base_tex(), "main")
+    """Compile Badre_Mhiouah_CV.tex itself, after it was edited by hand elsewhere."""
+    res = latex_build.compile_latex(latex_build.base_tex(), "Badre_Mhiouah_CV")
     return dict(res, variant=_base_variant(), pdf_url="/api/cvs/base-pdf")
 
 
