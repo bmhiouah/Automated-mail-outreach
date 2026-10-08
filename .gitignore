@@ -35,3 +35,10 @@ __pycache__/
 
 # macOS
 .DS_Store
+
+# Agent tooling state (local session notes and worktrees - not project code)
+.workbuddy-ai/
+.kilo/
+
+# Logs
+*.log
