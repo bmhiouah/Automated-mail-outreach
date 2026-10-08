@@ -92,7 +92,7 @@ async function loadCompanies(){
   if($('#cno').checked) p.set('without_contacts','1');
   const rows = await api('GET','/api/companies?'+p.toString());
   $('#ccount').textContent = rows.length+' firms';
-  const types='bank,hedge_fund,prop_hft,asset_manager,commodity,insurance_am,broker,crypto,other'
+  const types='bank,hedge_fund,prop_hft,asset_manager,commodity,insurance_am,broker,crypto,consulting,applied_ai,other'
     .split(',').map(t=>`<option value="${t}">${t}</option>`).join('');
   const statuses='to_research,researched,has_contacts,approached,dead'
     .split(',').map(t=>`<option value="${t}">${t}</option>`).join('');
@@ -615,7 +615,8 @@ function todoQuery(){
 
 const TYPE_LABELS = {bank:'Banks', hedge_fund:'Hedge funds', prop_hft:'Prop & HFT',
   asset_manager:'Asset managers', commodity:'Commodities', insurance_am:'Insurance AM',
-  broker:'Brokers', crypto:'Crypto', other:'Other'};
+  broker:'Brokers', crypto:'Crypto', consulting:'Consulting', applied_ai:'Applied AI',
+  other:'Other'};
 
 async function loadTodo(){
   const t = await api('GET','/api/todo?'+todoQuery());

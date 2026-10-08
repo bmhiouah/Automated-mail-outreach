@@ -1,6 +1,6 @@
-# Cold Approach — Quant Finance Outreach Tool
+# Cold Approach — Multi-Sector Outreach Tool
 
-A local, privacy-first web app to find, contact, and track outreach to quantitative finance firms in **Paris & London**. Built for junior profiles (0–2 years) targeting banks, hedge funds, prop/HFT shops, asset managers, commodities desks, and insurance AM.
+A local, privacy-first web app to find, contact, and track outreach across three adjacent sectors: **quantitative finance**, **data & AI consulting**, and **applied AI / ML product** firms in **Paris & London**. Built for junior profiles (0–2 years) targeting banks, hedge funds, prop/HFT shops, asset managers and insurance AM on one side; AI consultancies and data practices on the second; frontier and applied AI labs on the third.
 
 **Everything runs on your machine.** No accounts, no cloud, no data leaves your computer.
 
@@ -10,11 +10,11 @@ A local, privacy-first web app to find, contact, and track outreach to quantitat
 
 | Problem | How This Helps |
 |---------|----------------|
-| Finding the right people | Harvests quants/developers from Prospeo (filtered by title + location), learns firm email patterns from Hunter |
+| Finding the right people | Harvests quants, data scientists, AI engineers and consultants from Prospeo (filtered by title + location), learns firm email patterns from Hunter |
 | Writing emails that don't sound generic | Generates drafts from your CV + firm intel + live news; quality-checked before send |
 | Tracking who you've contacted | Append-only ledger — nobody slips through, follow-ups thread automatically |
 | Managing CV variants | One base CV, tailored versions per firm/role, validated before attach |
-| Staying organized | Sourcing worklist turns 365 firms into an ordered, actionable checklist |
+| Staying organized | Sourcing worklist turns the firm universe into an ordered, actionable checklist |
 
 ---
 
@@ -35,7 +35,7 @@ cp config.example.json config.json
 # Opens http://127.0.0.1:8765
 ```
 
-**First run** creates your local database (`data/cold_approach.db`), loads 365 firms, and seeds 4 email templates.
+**First run** creates your local database (`data/cold_approach.db`), loads the firm seed files, and seeds the email templates.
 
 ---
 
@@ -139,7 +139,7 @@ export TAVILY_API_KEY="tvly-..."
 | File | Purpose |
 |------|---------|
 | `data/cold_approach.db` | Your contacts, outreach, templates, CV variants — **back it up**: `python3 app/tools.py backup` |
-| `data/companies_seed.csv` | 365 firms (edit freely, re-seed is idempotent) |
+| `data/companies_seed*.csv` | firms across quant, consulting and applied AI (edit freely, re-seed is idempotent) |
 | `data/firm_briefs.csv` | 51 firm intel notes — edit inline, survives restarts |
 | `data/careers_urls.csv` | 83 verified careers pages |
 | `data/raw/<provider>/` | Cached API responses (never pay twice) |
@@ -209,7 +209,7 @@ db/schema.sql         # full schema
 | Phase | Status | Description |
 |-------|--------|-------------|
 | Foundations | ✅ Done | Schema, web app, templates, tracking |
-| Company Universe | ✅ Done | 365 firms, 41 Tier-1 careers pages verified |
+| Company Universe | ✅ Done | quant, data/AI consulting and applied AI firms, Tier-1 careers pages verified |
 | Email Resolution | ✅ Done | One real address → firm-wide pattern |
 | Contact Sourcing | ✅ Done | X-ray search, prioritized worklist |
 | Firm Intel | ✅ Done | 51 briefs with hooks |

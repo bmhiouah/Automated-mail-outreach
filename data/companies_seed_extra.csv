@@ -91,3 +91,27 @@ Barclays Private Bank,bank,UK universal,London,UK,Global,barclays.com,3,Investme
 JPMorgan Asset Management,asset_manager,bank-backed,New York,USA,Global,jpmorgan.com,3,Quantitative research
 Goldman Sachs Asset Management,asset_manager,bank-backed,New York,USA,Global,gs.com,3,Quantitative investment strategies
 Morgan Stanley Investment Management,asset_manager,bank-backed,New York,USA,Global,morganstanley.com,3,Systematic and quant
+Ekimetrics,consulting,data science,Paris,France,Global,ekimetrics.com,1,"Data science consultancy grown into an AI partner for luxury, CPG and finance; hires ML and analytics profiles"
+Artefact,consulting,data & AI,Paris,France,Global,artefact.com,1,"Data and AI consulting with a large engineering bench; Paris and London offices, strong applied ML work"
+Sia Partners,consulting,management & AI,Paris,France,Global,sia-partners.com,1,Paris-born consulting group with a large dedicated AI and data practice; hires data scientists and AI engineers
+Oliver Wyman,consulting,financial services,London,UK,Global,oliverwyman.com,2,Financial services consulting with quantitative and risk analytics teams; big Paris and London presence
+Analysis Group,consulting,economic,Boston,USA,Global,analysisgroup.com,2,Economic and financial consulting; Paris and London offices hire analytics and modelling profiles
+Accuracy,consulting,transaction advisory,Paris,France,Global,accuracy.com,2,Paris-born financial advisory firm; data and forensic analytics work sits alongside the valuation core
+Bain & Company,consulting,strategy,Boston,USA,Global,bain.com,2,Advanced Analytics group does real modelling work; Paris and London offices
+McKinsey & Company,consulting,strategy,New York,USA,Global,mckinsey.com,2,QuantumBlack is the AI and data science arm; hires applied ML engineers and data scientists
+BCG,consulting,strategy,Boston,USA,Global,bcg.com,2,BCG X builds and ships AI products for clients rather than only advising; Paris and London
+Wavestone,consulting,data & AI,Paris,France,France,wavestone.com,3,"French consulting group with data, AI and cybersecurity practices; broad analyst intake"
+Micropole,consulting,data & BI,Paris,France,France,micropole.com,3,"French data consulting firm focused on BI, data governance and analytics engineering"
+Mistral AI,applied_ai,frontier models,Paris,France,Global,mistral.ai,1,Paris frontier model lab building open-weight models; hires research engineers and applied scientists
+Hugging Face,applied_ai,ML platform,New York,USA,Global,huggingface.co,1,Open model hub with a large Paris office; ML platform and applied research roles
+Dataiku,applied_ai,data platform,Paris,France,Global,dataiku.com,1,Paris-born enterprise data science platform; large engineering and solutions-AI bench
+Google DeepMind,applied_ai,research lab,London,UK,Global,deepmind.google,1,London research lab with applied product teams; research engineer and scientist roles
+Owkin,applied_ai,biomedical AI,Paris,France,Global,owkin.com,2,Federated learning for clinical and biomedical data; research and engineering roles in Paris
+Quantexa,applied_ai,decision intelligence,London,UK,Global,quantexa.com,2,London-founded decision intelligence platform used heavily in financial crime; data science and ML roles
+Faculty AI,applied_ai,applied AI,London,UK,UK,faculty.ai,2,London applied AI company building production ML for public and private sector clients
+Wayve,applied_ai,embodied AI,London,UK,Global,wayve.ai,2,London embodied-AI company; end-to-end learned driving means heavy ML research and engineering
+Preligens,applied_ai,geospatial AI,Paris,France,Global,preligens.com,2,Paris AI company for defence and geospatial imagery analysis; research engineer intake
+Isomorphic Labs,applied_ai,drug discovery,London,UK,Global,isomorphiclabs.com,2,London AI-first drug discovery company spun out of DeepMind; applied ML research roles
+Probabl,applied_ai,open source ML,Paris,France,Global,probabl.ai,3,Paris company stewarding scikit-learn commercially; core ML engineering work
+Giskard,applied_ai,LLM testing,Paris,France,France,giskard.ai,3,Paris startup building evaluation and red-teaming tooling for LLM applications
+LightOn,applied_ai,gen AI,Paris,France,France,lighton.ai,3,Paris generative AI company; retrieval and applied LLM engineering roles

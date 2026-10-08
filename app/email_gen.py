@@ -324,4 +324,21 @@ Is the {{desk}} team hiring at the junior level this year? If not, that's a perf
 {{my_full_name}}""",
         "notes": "One follow-up, five to seven days later. A second follow-up is rarely worth it.",
     },
+    {
+        "name": "General intro - data, AI or consulting",
+        "role_family": "general",
+        "subject_tpl": "Quick question about the {{desk}} team at {{company}}",
+        "body_tpl": """Hi {{first_name}},
+
+{{hook}}
+
+I'm {{my_full_name}}, {{my_headline}} - {{my_years_exp}} years on {{my_key_skills_short}}, looking for a {{my_target_roles}} role in {{city}}.
+
+Is the {{desk}} team at {{company}} in a position to meet someone with that profile, or is hiring frozen right now? Happy to send a one-page summary if that's easier to scan than a CV.
+
+Best,
+{{my_full_name}}
+{{my_phone}} | {{my_linkedin}}""",
+        "notes": "The quant templates assume a desk that trades or prices. Use this one for consulting, applied-AI and platform teams, where 'the desk' is really a practice or an engineering team - the phrasing carries over, the pricing vocabulary does not.",
+    },
 ]

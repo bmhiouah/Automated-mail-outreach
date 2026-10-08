@@ -38,6 +38,10 @@ TITLES_BY_TYPE = {
     "insurance_am": ["Quantitative Analyst", "Portfolio Manager", "Risk Analyst"],
     "broker": ["Broker", "Trader", "Quantitative Analyst"],
     "crypto": ["Quantitative Trader", "Trader", "Quantitative Researcher"],
+    "consulting": ["Data Scientist", "Machine Learning Engineer", "Data Engineer",
+                   "Consultant"],
+    "applied_ai": ["Machine Learning Engineer", "Applied Scientist",
+                   "Research Engineer", "Research Scientist", "Data Scientist"],
     "other": ["Quantitative Analyst", "Quant Researcher"],
 }
 PROFILE_FIELDS = ["full_name", "email", "phone", "linkedin", "github", "website",

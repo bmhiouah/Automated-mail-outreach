@@ -140,7 +140,7 @@
 \end{center}
 
 \begin{center}
-\textbf {\scshape Quantitative Finance \& Data Science} 
+\textbf {\scshape Quantitative Finance, Data Science \& Applied AI}  
 \end{center}
 %-----------SUMMARY-----------
 
@@ -174,6 +174,22 @@
 
   \resumeSubHeadingListEnd
 
+%-----------SKILLS-----------
+\section{Skills}
+\begin{adjustwidth}{0.4cm}{}
+
+\renewcommand{\arraystretch}{1.3}
+\begin{tabularx}{\textwidth}{@{}>{\bfseries\raggedleft\arraybackslash}p{3.2cm} @{\hspace{0.4cm}} X@{}}
+Programming: & Python, SQL, C++, Git, VBA \\
+AI \& ML: & PyTorch, Hugging Face, LLM APIs, Scikit-learn \\
+Data \& Tools: & Pandas, NumPy, FastAPI, REST APIs, Docker, Power BI \\
+Finance: & Derivatives, XVA, Risk Management, Backtesting, Time Series \\
+Languages: & French, English (fluent); Arabic (fluent); Spanish (intermediate) \\
+\end{tabularx}
+
+\end{adjustwidth}
+%-------------------------------------------
+
 %-----------EDUCATION-----------
 \section{Education}
   \resumeSubHeadingListStart
@@ -191,7 +207,18 @@
        }
     \resumeItemListEnd
   \resumeSubHeadingListEnd
-\section{Personal Projects (Available on my GitHub)}\resumeSubHeadingListStart\resumeSubheading{Financial News Sentiment \& Market Analysis Pipeline}{Aug. 2026 -- Present}{Python, Hugging Face, FinBERT, FastAPI, PostgreSQL, Docker}{}\resumeItemListStart
+\section{Personal Projects (Available on my GitHub)}
+\resumeSubHeadingListStart
+
+\resumeSubheading{Automatic Cold Approach -- AI Outreach Platform}{Sep. 2026 -- Present}{Python, SQLite, REST APIs, LLMs, pytest}{}\resumeItemListStart
+\resumeItem{\textbf{Goal: } A local-first, full-stack web app that systematizes cold outreach to \textbf{quant finance, data/AI consulting and applied-AI firms} -- sourcing contacts, drafting personalized emails and firm-specific CV variants, and tracking every interaction end-to-end.}
+
+\resumeItem{\textbf{Engineering \& Safety: } Layered Python architecture exposed through \textbf{68 REST endpoints} with an idempotent fetch ledger (paid APIs cached, never re-spent), an append-only send ledger, and a human-in-the-loop queue (\textbf{dry-run by default}) so nothing is ever sent without an explicit decision.}
+
+\resumeItem{\textbf{Quality: } Maintaining a \textbf{296-test suite} run against throwaway databases to protect data-provenance invariants.}
+\resumeItemListEnd
+
+\resumeSubheading{Financial News Sentiment \& Market Analysis Pipeline}{Aug. 2026 -- Present}{Python, Hugging Face, FinBERT, FastAPI, PostgreSQL, Docker}{}\resumeItemListStart
 \resumeItem{\textbf{Goal: } Building an end-to-end AI pipeline to extract sentiment from financial news, transform it into quantitative signals, and evaluate its relationship with subsequent \textbf{stock market movements}.}
 
 \resumeItem{\textbf{AI \& Data Pipeline: } Collecting financial news and historical market data, processing and storing them in a database, and using \textbf{FinBERT} for domain-specific sentiment analysis and continuous sentiment scoring.}
@@ -232,24 +259,4 @@
           \resumeItemListEnd
           \resumeSubHeadingListEnd
 
-
-
-
-%
-%-----------PROGRAMMING SKILLS-----------
-\section{Skills \& Interests}
-\begin{adjustwidth}{0.4cm}{}
-
-\renewcommand{\arraystretch}{1.3}
-\begin{tabularx}{\textwidth}{@{}>{\bfseries\raggedleft\arraybackslash}p{3.2cm} @{\hspace{0.4cm}} X@{}}
-Agentic AI: & LLM Applications, Agentic AI, LangGraph, Tool Calling, MCP, Multi-Agent Systems, Context Engineering, LangChain, LLM APIs \\
-RAG \& Evaluation: & RAG, Embeddings, Vector Search, Hybrid Search, Reranking, LLM Evaluation, Ragas, DeepEval, Observability \\
-AI Engineering: & Python, SQL, FastAPI, REST APIs, Docker, Git, CI/CD, AWS/GCP, Monitoring.\\
-ML \& Fine-Tuning: & PyTorch, Hugging Face, Transformers, LoRA/QLoRA, PEFT, Deep Learning, Data mining, Inference, Prediction \\
-Data: & Pandas, NumPy, Scikit-learn, Experiment Design, Statistical Testing \\
-Languages: & French, Arabic, English (fluent); Spanish (intermediate); Mandarin (elementary) \\
-\end{tabularx}
-
-\end{adjustwidth}
-%-------------------------------------------
 \end{document}

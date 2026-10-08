@@ -1,4 +1,4 @@
--- Cold approach / quant finance job outreach tracker
+-- Cold approach / quant, consulting and applied AI job outreach tracker
 -- SQLite schema. Designed to be edited by hand or by the local web UI.
 
 PRAGMA foreign_keys = ON;
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS companies (
   id                 INTEGER PRIMARY KEY AUTOINCREMENT,
   name               TEXT NOT NULL UNIQUE,
   domain             TEXT,                 -- email domain, e.g. gs.com
-  type               TEXT NOT NULL DEFAULT 'other',   -- bank|hedge_fund|prop_hft|asset_manager|commodity|insurance_am|broker|crypto|other
+  type               TEXT NOT NULL DEFAULT 'other',   -- bank|hedge_fund|prop_hft|asset_manager|commodity|insurance_am|broker|crypto|consulting|applied_ai|other
   subtype            TEXT,                 -- bulge bracket, multi-strategy, market maker...
   hq_city            TEXT,
   hq_country         TEXT,
