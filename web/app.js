@@ -1013,8 +1013,16 @@ async function openCv(id){
     setCvEditor((v.latex||'') ? 'latex' : 'text');
     $('#cv-edit-title').innerHTML = 'Editing: <span class="muted">'+esc(v.name)+'</span>';
     $('#cv-saved').textContent = '';
-    $('#cv-editor-hint').textContent = v.id===0
-      ? 'Badre_Mhiouah_CV.tex itself. It cannot be saved from here - edit the file, then Recompile.'
+    const isBase = (v.id===0);
+    // The base is already validated and is named by its filename, so the two
+    // controls that would be lies for it are taken out of the way rather than
+    // left to answer "the base CV is already yours".
+    $('#cv-btn-validate').style.display = isBase ? 'none' : '';
+    $('#cv-btn-reject').style.display  = isBase ? 'none' : '';
+    $('#cv-name').disabled = isBase;
+    $('#cv-name').title = isBase ? 'The master document keeps its filename' : '';
+    $('#cv-editor-hint').textContent = isBase
+      ? 'Your master Badre_Mhiouah_CV.tex — Save writes it directly, keeping a .bak copy of the previous version.'
       : '';
     loadCvs();                              // highlight the row straight away
     await recompileAndShow(id, v);
@@ -1062,12 +1070,12 @@ async function deleteCv(ev, id){
 
 async function openBasePdf(){ previewBaseCv(); }
 
+/* id 0 is the base CV. Saving it is allowed and is the point of this button
+   now: the payload is the same shape a variant takes, and the server writes
+   Badre_Mhiouah_CV.tex with a .bak beside it. The only real difference is that
+   the name is the filename, so it is not sent. */
 async function saveCv(){
-  if(currentCvId===0){
-    $('#cv-saved').textContent = 'Badre_Mhiouah_CV.tex cannot be saved from here - edit the file, then Recompile';
-    return;
-  }
-  if(!currentCvId){ newCv(); return; }
+  if(currentCvId===null || currentCvId===undefined){ newCv(); return; }
   const payload = {id:currentCvId, name:$('#cv-name').value};
   if(cvEditorMode==='latex') payload.latex = $('#cv-latex').value;
   else payload.body = $('#cv-body').value;

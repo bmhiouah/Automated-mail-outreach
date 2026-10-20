@@ -46,8 +46,15 @@ def _cv_cfg():
     return block if isinstance(block, dict) else {}
 
 
+# Tests point this at a throwaway file, the same way they point CV_DIR at a
+# throwaway directory: a save must never rewrite the CV you own mid-run.
+BASE_TEX_OVERRIDE = None
+
+
 def base_tex_path():
     """Where the master LaTeX CV lives. Overridable as cv.base_tex."""
+    if BASE_TEX_OVERRIDE:
+        return BASE_TEX_OVERRIDE
     rel = (_cv_cfg().get("base_tex") or DEFAULT_TEX).strip()
     return rel if os.path.isabs(rel) else os.path.join(BASE, rel)
 
@@ -59,6 +66,30 @@ def base_tex():
             return fh.read()
     except OSError:
         return ""
+
+
+def write_base_tex(tex):
+    """Replace the master document, keeping the version it replaces.
+
+    This is the one write a bad keystroke could cost a rewrite to recover from,
+    so three things happen first: an empty document is refused rather than
+    written, the write goes through a temp file and os.replace so a crash
+    mid-write cannot leave a half document, and the version being replaced is
+    kept as `<name>.bak` beside it. Returns the path written.
+    """
+    if not (tex or "").strip():
+        raise ValueError("refusing to write an empty base CV")
+    path = base_tex_path()
+    parent = os.path.dirname(path)
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    if os.path.isfile(path) and os.path.getsize(path):
+        shutil.copy2(path, path + ".bak")
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(tex)
+    os.replace(tmp, path)
+    return path
 
 
 def engine():

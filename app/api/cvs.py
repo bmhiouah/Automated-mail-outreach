@@ -1,17 +1,24 @@
 """CV variants: one base document, many adaptations, all reviewed by you.
 
-The base CV lives in `profile.cv_text` and this module never writes to it. That
-is the whole design. A tailoring that quietly drops a Master's, or that arrives
-having invented a Python library you have never used, must cost a click to throw
-away - not a rewrite to recover. So:
+The base CV is `Badre_Mhiouah_CV.tex`, mirrored as plain text in
+`profile.cv_text`. Two different writers reach it, and which one is allowed is
+the whole design:
 
-  * `llm.generate_cv` proposes; it cannot save.
-  * A proposal lands as `status='pending'` and is not attachable to a queued mail
-    until you mark it `validated`. (`queue._cv_text` refuses anything else.)
-  * `parent_id` records what it was derived from, so "back to the base" is a
-    lookup rather than a reconstruction.
+  * The **model** never writes it. `llm.generate_cv` proposes; it cannot save. A
+    tailoring that quietly drops a Master's, or that arrives having invented a
+    Python library you have never used, must cost a click to throw away - not a
+    rewrite to recover. A proposal lands as `status='pending'` and is not
+    attachable to a queued mail until you mark it `validated`.
+  * **You** write it, by hand, through `api_cv_save_base` - the same editor the
+    variants use, with the file backed up first and an empty document refused.
+    That is a deliberate edit you can see and undo; it is not a model guessing.
 
-The variants are validated exactly the way mails are: one row, one decision.
+So the invariant is not "nobody can touch the base". It is: a machine can never
+silently replace the CV you would actually send.
+
+`parent_id` records what a variant was derived from, so "back to the base" is a
+lookup rather than a reconstruction. Validation works exactly the way mails do:
+one row, one decision.
 """
 import os
 import sys
@@ -36,7 +43,7 @@ CV_FIELDS = ["name", "body", "latex", "parent_id", "company_id", "contact_id",
 
 
 def base_cv():
-    """The master document. Read-only as far as this module is concerned."""
+    """The master document as plain text, as tailoring and the mailer read it."""
     return get_profile().get("cv_text") or ""
 
 
@@ -141,7 +148,7 @@ def api_cv_propose(payload):
 
 
 def api_cv_save(payload):
-    """Write your own edits to a variant. Marks it edited, not validated.
+    """Write your own edits to a variant, or to the base CV when id is 0.
 
     Word edits are written back into the LaTeX they came from, then the PDF is
     rebuilt: the preview must show what was just typed, not what used to be
@@ -149,6 +156,8 @@ def api_cv_save(payload):
     the layout is what broke.
     """
     vid = payload.get("id")
+    if vid in (0, "0"):
+        return api_cv_save_base(payload)
     rows = db.query("SELECT * FROM cv_variants WHERE id=?", [vid])
     if not rows:
         return {"error": "that CV variant no longer exists"}
@@ -199,6 +208,75 @@ def api_cv_save(payload):
         out["compiled"] = compiled
         out["variant"] = api_cv_get({"id": vid})
         out["pdf_url"] = _pdf_url(out["variant"])
+    return out
+
+
+def api_cv_save_base(payload):
+    """Your own hand edits to `Badre_Mhiouah_CV.tex`, written to the file.
+
+    The model still cannot get here: this runs on a request you made from the
+    editor, and only for id 0. Everything that made the old "the base cannot be
+    saved" refusal worth having is kept rather than dropped:
+
+      * an **empty document is refused** - losing the master to a stray Cmd+A
+        would be the exact cost the whole design was defending against;
+      * the previous version is kept as `Badre_Mhiouah_CV.tex.bak` before the
+        write, so a bad edit costs one rename to undo;
+      * the write is atomic (temp file + rename), so a crash cannot leave a
+        half-written CV;
+      * pdflatex runs next. If it fails your text is still on disk - the words
+        are yours, the layout is what broke - and the error comes back to the
+        tab instead of being swallowed;
+      * `profile.cv_text` is updated from the new source, because tailoring and
+        the mailer read the plain text: editing the .tex and leaving that stale
+        would tailor the next variant from a CV you no longer send.
+
+    The name is not writable here. The file is the file.
+    """
+    old_latex = latex_build.base_tex()
+    if not old_latex.strip():
+        return {"error": "Badre_Mhiouah_CV.tex is missing or empty - refusing "
+                         "to write over nothing. Put the document back first."}
+    old_body = _text_of(old_latex)
+    payload = dict(payload)
+    latex_in = "latex" in payload
+    body_in = "body" in payload
+    new_latex = payload["latex"] if latex_in else old_latex
+    new_body = payload["body"] if body_in else old_body
+    latex_changed = latex_in and new_latex != old_latex
+    body_changed = body_in and new_body != old_body
+    # Same Words-pane rule as a variant: if only the words were edited, patch
+    # the sentence into the .tex first, so the PDF shows what was typed.
+    unplaceable = False
+    if body_changed and not latex_changed:
+        patched = latex_cv.apply_text_edits(old_latex, old_body, new_body)
+        if patched != old_latex:
+            new_latex, latex_changed = patched, True
+        else:
+            unplaceable = True
+    elif latex_changed and not body_changed:
+        new_body = _text_of(new_latex)
+    if not (new_latex or "").strip():
+        return {"error": "the base CV cannot be saved empty - the master "
+                         "document must not be replaced by a blank page"}
+    if not (latex_changed or body_changed):
+        return {"variant": _base_variant(), "note": "no changes to save"}
+    try:
+        latex_build.write_base_tex(new_latex)
+    except (OSError, ValueError) as exc:
+        return {"error": f"could not write Badre_Mhiouah_CV.tex: {exc}"}
+    # Tailoring and mail scoring read profile.cv_text, so it follows the .tex.
+    db.execute("UPDATE profile SET cv_text=?, updated_at=? WHERE id=1",
+               [_text_of(new_latex), now_iso()])
+    out = {"variant": _base_variant(), "backup": "Badre_Mhiouah_CV.tex.bak"}
+    if unplaceable:
+        out["words_not_applied"] = (
+            "saved, but the change could not be written into the .tex, so the PDF "
+            "is unchanged - make the edit on the LaTeX source tab to see it")
+    if latex_changed:
+        out["compiled"] = compile_base()
+        out["variant"] = _base_variant()
+        out["pdf_url"] = "/api/cvs/base-pdf"
     return out
 
 
@@ -473,8 +551,8 @@ def _base_variant():
     Always id 0, always 'made by you', always compiled on demand. The mail gate
     needs (validated, compiled) before anything can be attached, so the base is
     offered as already approved - the compile step is what makes it sendable.
-    This dict is built live from Badre_Mhiouah_CV.tex: it is never itself written to,
-    which is the whole reason a bad run costs nothing.
+    This dict is built live from Badre_Mhiouah_CV.tex on every call, so a save
+    through api_cv_save_base is visible on the next read with nothing cached.
     """
     base = latex_build.base_tex()
     body = _text_of(base)
@@ -487,9 +565,19 @@ def _base_variant():
                 "data/cvs/Badre_Mhiouah_CV.pdf"), "pdf_url": "/api/cvs/base-pdf"}
 
 
+def compile_base():
+    """Compile Badre_Mhiouah_CV.tex as it stands on disk. Failure is a result.
+
+    `compile_latex` refuses to delete a PDF it could not replace, so a broken
+    edit leaves the previous PDF in place - which is what mail would still
+    attach - and the error comes back to the tab that caused it.
+    """
+    return latex_build.compile_latex(latex_build.base_tex(), "Badre_Mhiouah_CV")
+
+
 def api_cv_base_compile(payload):
     """Compile Badre_Mhiouah_CV.tex itself, after it was edited by hand elsewhere."""
-    res = latex_build.compile_latex(latex_build.base_tex(), "Badre_Mhiouah_CV")
+    res = compile_base()
     return dict(res, variant=_base_variant(), pdf_url="/api/cvs/base-pdf")
 
 

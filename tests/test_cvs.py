@@ -1,9 +1,11 @@
-"""CV variants: the base document is never overwritten, and nothing unvalidated
-is ever attachable to a mail.
+"""CV variants: the base document can only be changed by you, and nothing
+unvalidated is ever attachable to a mail.
 
 The two properties worth defending are both about loss. A tailoring that drops a
-qualification, or that overwrites the master CV, costs a rewrite to recover -
-so the design makes both impossible rather than merely discouraged.
+qualification, or a model that overwrites the master CV, costs a rewrite to
+recover - so both are made impossible rather than merely discouraged. Hand edits
+through the editor are a different thing: they are deliberate, they are backed
+up first, and an empty document is refused, so that path is tested too.
 """
 from .harness import bootstrap  # noqa: E402
 
@@ -20,21 +22,33 @@ from api import cvs, queue
 # latex_build.CV_DIR is the real data/cvs/. These tests compile and delete
 # documents, so the module points it at a throwaway directory: a delete test
 # must never be able to remove a CV you actually own.
+# latex_build.BASE_TEX_OVERRIDE is the same guard for the master document.
+# Saving the base is a tested feature now, so the tests write to a copy of
+# Badre_Mhiouah_CV.tex - never to the one you send.
 _REAL_CV_DIR = None
 _TMP_CV_DIR = None
+_REAL_BASE_TEX = None
+_TMP_BASE_TEX = None
 
 
 def setUpModule():
-    global _REAL_CV_DIR, _TMP_CV_DIR
+    global _REAL_CV_DIR, _TMP_CV_DIR, _REAL_BASE_TEX, _TMP_BASE_TEX
     bootstrap()
     import latex_build
     _REAL_CV_DIR = latex_build.CV_DIR
     _TMP_CV_DIR = tempfile.mkdtemp(prefix="cvtest-")
     latex_build.CV_DIR = _TMP_CV_DIR
+    _REAL_BASE_TEX = latex_build.BASE_TEX_OVERRIDE
+    _TMP_BASE_TEX = os.path.join(_TMP_CV_DIR, "Badre_Mhiouah_CV.tex")
+    # Seed the copy with the real document: several tests assert the base is
+    # readable, and an empty stand-in would make them pass for the wrong reason.
+    shutil.copyfile(latex_build.base_tex_path(), _TMP_BASE_TEX)
+    latex_build.BASE_TEX_OVERRIDE = _TMP_BASE_TEX
 
 
 def tearDownModule():
     import latex_build
+    latex_build.BASE_TEX_OVERRIDE = _REAL_BASE_TEX
     if _REAL_CV_DIR is not None:
         latex_build.CV_DIR = _REAL_CV_DIR
     if _TMP_CV_DIR:
@@ -131,6 +145,121 @@ class TestTheBaseIsSafe(CvFixture):
             _restore(saved)
         self.assertIn("no base CV", r["error"])
         self.assertEqual(db.query("SELECT COUNT(*) n FROM cv_variants")[0]["n"], 0)
+
+
+class TestEditingTheBaseByHand(CvFixture):
+    """The editor's Save on id 0 - your edit, written to the file you send.
+
+    Every test here runs against a copy of Badre_Mhiouah_CV.tex, because the
+    whole point of these tests is that the master document gets written to.
+    """
+    TEX = ("\\documentclass{article}\n\\begin{document}\n"
+           "Badre Mhiouah -- quant CV. Python, C++.\n\\end{document}\n")
+
+    def setUp(self):
+        super().setUp()
+        import latex_build
+        self._saved_build = None
+        self._orig_base = latex_build.base_tex()
+        self._write(self.TEX)
+
+    def tearDown(self):
+        super().tearDown()
+        import latex_build
+        self._write(self._orig_base)
+        if self._saved_build is not None:
+            (latex_build.compile_latex, latex_build.engine) = self._saved_build
+
+    @staticmethod
+    def _write(tex):
+        import latex_build
+        with open(latex_build.base_tex_path(), "w", encoding="utf-8") as fh:
+            fh.write(tex)
+
+    @staticmethod
+    def _read():
+        import latex_build
+        return latex_build.base_tex()
+
+    def _stub_compile(self, ok=True, error="an unbalanced brace"):
+        import latex_build
+        self._saved_build = (latex_build.compile_latex, latex_build.engine)
+        latex_build.engine = lambda: "/usr/bin/pdflatex"
+        latex_build.compile_latex = (
+            lambda _tex, _slug: {"ok": True, "pdf": f"data/cvs/{_slug}.pdf",
+                                 "error": None, "runs": 2}
+            if ok else {"ok": False, "error": error})
+
+    def test_a_latex_edit_is_written_to_the_master_file(self):
+        self._stub_compile()
+        r = cvs.api_cv_save({"id": 0,
+                             "latex": self.TEX.replace("Python, C++", "Python, C++, SQL")})
+        self.assertNotIn("error", r)
+        self.assertIn("SQL", self._read())
+        self.assertEqual(r["variant"]["id"], 0)
+
+    def test_the_previous_version_is_kept_as_a_backup(self):
+        """A hand edit must cost one rename to undo, not a rewrite to recover."""
+        import latex_build
+        self._stub_compile()
+        cvs.api_cv_save({"id": 0, "latex": self.TEX.replace("quant CV", "other CV")})
+        bak = latex_build.base_tex_path() + ".bak"
+        self.assertTrue(os.path.isfile(bak))
+        with open(bak, encoding="utf-8") as fh:
+            self.assertIn("quant CV", fh.read())
+
+    def test_an_empty_document_is_refused_and_the_file_is_left_alone(self):
+        """Cmd+A, Delete, Save must not be able to blank the master CV."""
+        self._stub_compile()
+        r = cvs.api_cv_save({"id": 0, "latex": ""})
+        self.assertIn("empty", r["error"])
+        self.assertIn("quant CV", self._read())
+
+    def test_a_missing_master_is_refused_rather_than_created_empty(self):
+        """No file at all is 'nothing to lose' only until you write over it."""
+        import latex_build
+        os.remove(latex_build.base_tex_path())
+        r = cvs.api_cv_save({"id": 0, "latex": "\\documentclass{article}"})
+        self.assertIn("missing", r["error"])
+        self.assertFalse(os.path.exists(latex_build.base_tex_path()))
+
+    def test_a_word_edit_is_written_back_into_the_master(self):
+        self._stub_compile()
+        body = cvs._text_of(self.TEX)
+        r = cvs.api_cv_save({"id": 0, "body": body.replace("Python, C++", "Python, C++, SQL")})
+        self.assertNotIn("error", r)
+        self.assertIn("SQL", self._read())
+
+    def test_a_failed_compile_keeps_the_text_and_reports_the_error(self):
+        """The words are still yours when the layout is what broke."""
+        self._stub_compile(ok=False)
+        r = cvs.api_cv_save({"id": 0, "latex": self.TEX.replace("quant CV", "quant 2")})
+        self.assertFalse(r["compiled"]["ok"])
+        self.assertIn("brace", r["compiled"]["error"])
+        self.assertIn("quant 2", self._read())
+
+    def test_the_plain_text_mirror_follows_the_master(self):
+        """Tailoring reads profile.cv_text - a stale copy would tailor the old CV."""
+        self._stub_compile()
+        cvs.api_cv_save({"id": 0, "latex": self.TEX.replace("quant CV", "quant CV renamed")})
+        self.assertIn("renamed", cvs.base_cv())
+
+    def test_saving_without_any_change_does_nothing(self):
+        self._stub_compile()
+        r = cvs.api_cv_save({"id": 0, "latex": self.TEX})
+        self.assertIn("no changes", r.get("note", ""))
+        self.assertNotIn("compiled", r)
+
+    def test_a_model_proposal_still_cannot_reach_the_master_file(self):
+        """The new save path is yours; the LLM's remains a proposal in a row."""
+        saved = _stub_llm(body="MODEL WROTE THIS")
+        try:
+            cvs.api_cv_propose({"company_id": self.co["id"]})
+        finally:
+            _restore(saved)
+        self.assertIn("quant CV", self._read(),
+                      "a tailoring must never reach Badre_Mhiouah_CV.tex")
+        self.assertEqual(cvs.base_cv(), self.BASE)
 
 
 class TestValidation(CvFixture):

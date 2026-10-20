@@ -416,20 +416,24 @@
       </div>
       <div class="scroll" style="max-height:320px"><table id="cv-table"></table></div>
       <div class="hint">Your base CV <b>Badre_Mhiouah_CV.tex</b> sits at the top, labelled <b>me</b> — it is
-        listed like any other variant, and it is never overwritten. Clicking a row opens it and
+        listed like any other variant, and it is <b>yours to edit</b>: click it, change the text or the
+        LaTeX, press <b>Save</b>, and it is written back to the file with a <code>.bak</code> of the
+        previous version beside it. Clicking a row opens it and
         <b>recompiles it on the spot</b>, so the preview above always shows your latest save.
-        <b>Delete</b> removes a variant and its PDF. A variant must be <b>validated</b> before it
+        <b>Delete</b> removes a variant and its PDF; the base is never deleted. A variant must be <b>validated</b> before it
         can be attached to a queued mail.</div>
     </div>
     <div class="card">
       <h2 id="cv-edit-title">A variant</h2>
       <div class="hint">Save writes the LaTeX, then rebuilds the PDF, so the preview matches
-        what you just typed. Word edits are written back into the <code>.tex</code> first.</div>
+        what you just typed. Word edits are written back into the <code>.tex</code> first.
+        This works on <b>your base CV</b> too — a <code>.bak</code> of the previous
+        version is written beside it first, so it is always undoable.</div>
       <div class="row">
         <input id="cv-name" placeholder="Name this variant" style="flex:1;min-width:240px">
         <button class="ghost" onclick="saveCv()">Save</button>
-        <button class="act" onclick="reviewCv('validated')">Validate</button>
-        <button class="ghost" onclick="reviewCv('rejected')">Reject</button>
+        <button class="act" id="cv-btn-validate" onclick="reviewCv('validated')">Validate</button>
+        <button class="ghost" id="cv-btn-reject" onclick="reviewCv('rejected')">Reject</button>
       </div>
       <div class="row" style="margin-top:8px">
         <button class="ghost sm" id="cv-tab-text" onclick="setCvEditor('text')">Words</button>
