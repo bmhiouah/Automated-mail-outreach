@@ -153,7 +153,7 @@
       {General Inspection}{Hong Kong}
       \resumeItemListStart
         \resumeItem{Partnered with \textbf{non-technical stakeholders} to identify \textbf{time-consuming, repetitive audit activities} and assess opportunities for automation, translating business needs into \textbf{data and AI use cases}.}
-        \resumeItem{Designed and prototyped \textbf{LLM-based solutions} using prompt engineering and LLM APIs to automate and accelerate audit workflows, including the enrichment, structuring, and analysis of \textbf{operational loss data}.}
+        \resumeItem{Designed and prototyped \textbf{LLM-based solutions} using prompt engineering and LLM APIs to automate and accelerate audit workflows, including the enrichment, structuring, and analysis of operational loss data.}
         \resumeItem{Developed a \textbf{Power BI platform} combining automated insights and multi-level risk reporting, enabling auditors to reduce manual analysis and gain faster access to \textbf{actionable risk information}.}
         \resumeItem{Analyzed \textbf{large-scale trading datasets} from Delta One activities to identify \textbf{anomalous patterns, risk concentrations, and control weaknesses} across equity and index derivative products, supporting auditors in risk-focused investigations.}
         \resumeItem{Performed forensic analyses of trading and market data to identify potential indicators of \textbf{market manipulation}.}
