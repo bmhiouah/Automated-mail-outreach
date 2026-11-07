@@ -6,7 +6,7 @@ How the tracker is put together, and the rules new code is expected to keep.
 
 ```
 browser            web/index.html + web/app.js + web/style.css (vanilla, no build)
-   |  JSON over HTTP (59 routes)
+   |  JSON over HTTP (68 routes)
 app/server.py      the shell: socket, static files, entry point. No SQL, no shapes.
    |  dispatch(method, parts, params, payload) -> (status, JSON-able | Raw)
 app/api/           one module per surface + the ROUTES table in __init__.py

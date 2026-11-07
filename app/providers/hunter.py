@@ -32,7 +32,7 @@ import net         # noqa: E402
 
 API = "https://api.hunter.io/v2"
 PROVIDER = "hunter"
-CONFIG_PATH = os.path.join(db.BASE, "config.json")
+CONFIG_PATH = os.path.join(db.BASE, "config", "config.json")
 
 # Our short endpoint name -> the real URL path. These differ ("people-find" is
 # served at /people/find), and using the key name directly sent enrichment to

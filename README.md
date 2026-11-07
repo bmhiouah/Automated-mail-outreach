@@ -26,8 +26,8 @@ git clone <your-repo-url>
 cd cold-approach
 
 # 2. Add your API keys (gitignored, never committed)
-cp config.example.json config.json
-# Edit config.json with your Hunter.io & Prospeo keys
+cp config/config.example.json config/config.json
+# Edit config/config.json with your Hunter.io & Prospeo keys
 # Optional: add LLM keys for AI drafts, Tavily for news, SMTP for live sending
 
 # 3. Run
@@ -75,7 +75,7 @@ Paste messy LinkedIn exports, team pages, spreadsheets, bare names — it parses
 - **History** = append-only ledger of everything sent
 
 ### 4. CV Variants → CVs Tab
-- Base CV (`Badre_Mhiouah_CV.tex`) never overwritten
+- Base CV (`cv/Badre_Mhiouah_CV.tex`) never overwritten by a variant; Save keeps `cv/Badre_Mhiouah_CV.tex.bak` as a one-step undo
 - Generate tailored versions per firm/role → review → validate → attach to mail
 
 ---
@@ -97,40 +97,16 @@ Paste messy LinkedIn exports, team pages, spreadsheets, bare names — it parses
 
 ## Configuration
 
-All secrets in `config.json` (gitignored, `chmod 600`):
+All secrets live in `config/config.json` (gitignored, `chmod 600`). It is
+created from the tracked template, so the two files are **not** duplicates:
 
-```json
-{
-  "hunter_api_key": "...",
-  "prospeo_api_key": "...",
-  "tavily_api_key": "tvly-...",          // optional: live news line in emails
-  "llm": {                                // optional: AI drafts
-    "api_key": "sk-...",
-    "base_url": "https://api.openai.com/v1",
-    "model": "gpt-4o-mini",
-    "temperature": 0.7,
-    "max_tokens": 700
-  },
-  "mail": {                               // optional: live sending
-    "send_mode": "dry",                   // "live" to actually transmit
-    "smtp_host": "smtp.gmail.com",
-    "smtp_port": 465,
-    "smtp_user": "you@gmail.com",
-    "smtp_password": "16-char-app-password",
-    "smtp_ssl": true,
-    "from_name": "Your Name",
-    "daily_cap": 40
-  }
-}
-```
-
-**Or use environment variables** (they override the file, so keys never touch disk):
 ```bash
-export OPENAI_API_KEY="sk-..."
-export OPENAI_BASE_URL="https://api.openai.com/v1"
-export OPENAI_MODEL="gpt-4o-mini"
-export TAVILY_API_KEY="tvly-..."
+cp config/config.example.json config/config.json
 ```
+
+Full reference — every key, the optional LLM/SMTP/CV blocks, and the
+environment variables that override the file so keys never touch disk:
+[`docs/configuration.md`](docs/configuration.md).
 
 ---
 
@@ -154,6 +130,8 @@ python3 app/harvest.py --source prospeo --pages 2   # find people
 python3 app/harvest.py --source hunter  --tier 1    # learn email patterns
 python3 app/harvest.py --status                     # coverage report
 python3 app/harvest.py --reconstruct                # rebuild guessed addresses
+python3 scripts/run_all.py --dry-run             # full pipeline, spends nothing
+python3 scripts/run_all.py                       # full pipeline, in the right order
 
 # CV & Profile
 python3 app/llm.py           # check LLM config
@@ -174,9 +152,12 @@ node tests/check_ui.mjs              # front-end route/id checks
 
 ## Architecture (for contributors)
 
+Design notes and invariants: [`docs/architecture.md`](docs/architecture.md).
+Sourcing workflow: [`docs/playbook.md`](docs/playbook.md).
+
 ```
 app/
-├── api/              # 45 REST endpoints, one module per surface
+├── api/              # 68 REST endpoints, one module per surface
 ├── providers/        # hunter.py, prospeo.py, tavily.py
 ├── harvest.py        # orchestrates providers, caches, resumes
 ├── email_gen.py      # templates + quality checker
@@ -189,9 +170,13 @@ app/
 ├── people_store.py   # identity resolution + merge rules
 └── taxonomy.py       # title → desk + seniority (import this, not web)
 
+cv/                   # the master LaTeX CV + its auto .bak undo copy
+config/               # config.json (your keys) + config.example.json (template)
+scripts/run_all.py    # full harvest pipeline, in the right order
 web/                  # vanilla HTML/JS/CSS (no build step)
-tests/                # 296 tests on temp DB + UI checks
+tests/                # 305 tests on a temp DB + UI checks
 db/schema.sql         # full schema
+docs/                 # architecture, configuration and sourcing playbook
 ```
 
 ---

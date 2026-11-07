@@ -13,7 +13,7 @@ import argparse
 import os
 import sys
 
-BASE = os.path.dirname(os.path.abspath(__file__))
+BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(BASE, "app"))
 
 import db                              # noqa: E402
@@ -32,7 +32,7 @@ def count_firms_with_domain(tier=None, company=None, limit=None):
 
 
 def load_keys():
-    path = os.path.join(db.BASE, "config.json")
+    path = os.path.join(db.BASE, "config", "config.json")
     keys = {"hunter": "", "prospeo": ""}
     if os.path.exists(path):
         try:

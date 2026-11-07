@@ -24,8 +24,8 @@ import tempfile
 
 BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CV_DIR = os.path.join(BASE, "data", "cvs")
-CONFIG_PATH = os.path.join(BASE, "config.json")
-DEFAULT_TEX = "Badre_Mhiouah_CV.tex"
+CONFIG_PATH = os.path.join(BASE, "config", "config.json")
+DEFAULT_TEX = "cv/Badre_Mhiouah_CV.tex"
 SLUG_RE = re.compile(r"[^A-Za-z0-9._-]+")
 
 

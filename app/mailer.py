@@ -46,7 +46,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import db    # noqa: E402
 
-CONFIG_PATH = os.path.join(db.BASE, "config.json")
+CONFIG_PATH = os.path.join(db.BASE, "config", "config.json")
 DEFAULT_DAILY_CAP = 40
 
 

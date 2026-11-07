@@ -33,7 +33,7 @@ import net     # noqa: E402
 
 API = "https://api.prospeo.io"
 PROVIDER = "prospeo"
-CONFIG_PATH = os.path.join(db.BASE, "config.json")
+CONFIG_PATH = os.path.join(db.BASE, "config", "config.json")
 
 # Costs. Prospeo bills per reveal, not per search for most plans, but we count
 # a search too so a budget cannot silently run away. Adjust here if your plan

@@ -1,7 +1,7 @@
 """The review queue: drafting, editing, validating, and the send-side refusals.
 
 Every test here is written so that deleting the behaviour it covers makes it
-fail. That is the bar ARCHITECTURE.md sets, and this module is where it matters
+fail. That is the bar docs/architecture.md sets, and this module is where it matters
 most: these are the guarantees between "the machine wrote something" and "a
 person received it".
 

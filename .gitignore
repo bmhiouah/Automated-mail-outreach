@@ -1,5 +1,5 @@
-# API keys — never commit these
-config.json
+# API keys — never commit these. config/config.example.json IS tracked.
+/config/config.json
 
 # Raw API responses kept by the harvesters (data/raw/<provider>/...)
 data/raw/
@@ -42,3 +42,22 @@ __pycache__/
 
 # Logs
 *.log
+
+# LaTeX build artifacts from compiling the master CV by hand. The app itself
+# compiles into data/cvs/ through a temp dir, and the PDFs there ARE tracked.
+*.aux
+*.out
+/Badre_Mhiouah_CV.pdf
+/cv/Badre_Mhiouah_CV.pdf
+
+# The app writes <master>.bak beside cv/Badre_Mhiouah_CV.tex on every Save
+# as a one-step undo. Git history already holds that older version, so the
+# working copy stays on disk but is not versioned.
+/cv/*.bak
+
+# Compile inputs in data/cvs/ are regenerated on every compile and never read
+# back. Only the PDFs are real output.
+/data/cvs/*.tex
+
+# Test runner cache
+.pytest_cache/

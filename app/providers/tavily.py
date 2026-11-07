@@ -31,7 +31,7 @@ ENDPOINT = "search"
 # One search is one credit on Tavily's plans; counted so a budget cannot
 # silently run away, same reasoning as the other providers.
 CREDIT_COST = 1.0
-CONFIG_PATH = os.path.join(db.BASE, "config.json")
+CONFIG_PATH = os.path.join(db.BASE, "config", "config.json")
 
 
 def load_key(explicit=None):

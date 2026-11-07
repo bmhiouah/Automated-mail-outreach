@@ -38,7 +38,7 @@ import net   # noqa: E402
 import taxonomy  # noqa: E402
 from providers import tavily  # noqa: E402
 
-CONFIG_PATH = os.path.join(db.BASE, "config.json")
+CONFIG_PATH = os.path.join(db.BASE, "config", "config.json")
 
 # The endpoint name in the ledger. Separate from the model, because the model is
 # an attribute of the call and this is the call site.
@@ -380,7 +380,7 @@ def chat(prompt, system=None, temperature=None, max_tokens=None, force=False,
     """
     cfg = config()
     if not cfg["api_key"]:
-        return {"ok": False, "error": "no LLM API key configured - see config.example.json"}
+        return {"ok": False, "error": "no LLM API key configured - see config/config.example.json"}
     system = SYSTEM_PROMPT if system is None else system
     temperature = cfg["temperature"] if temperature is None else temperature
     max_tokens = max_tokens or cfg["max_tokens"]
