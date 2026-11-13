@@ -22,7 +22,7 @@ CONTACT_FIELDS = ["first_name", "last_name", "job_title", "desk", "seniority",
                   # harvested person data (see app/providers/)
                   "full_name", "position_raw", "headline", "department",
                   "seniority_level", "location_raw", "state", "country_code",
-                  "timezone", "phone", "email_masked"]
+                  "timezone", "phone", "email_masked", "schools"]
 OUTREACH_FIELDS = ["contact_id", "channel", "template_id", "subject", "body",
                    "status", "sent_at", "followup_stage", "next_followup_at",
                    "replied_at", "reply_snippet", "outcome", "notes"]

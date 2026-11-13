@@ -27,31 +27,33 @@
     <div class="stats" id="stats"></div>
     <div class="grid2">
       <div class="card">
-        <h2>Follow-ups due</h2>
-        <div id="due"></div>
+        <h2>To do</h2>
+        <div id="dash-todo"></div>
       </div>
       <div class="card">
-        <h2>Pipeline health</h2>
-        <div id="health"></div>
-        <div class="row" style="margin-top:14px">
-          <button class="ghost sm" onclick="demo('load')">Load sample data</button>
-          <button class="ghost sm" onclick="demo('clear')">Remove sample data</button>
-        </div>
-        <div class="hint">Eight sample contacts across Societe Generale, QRT, Jane Street, CFM and
-          others, plus a sample profile, so you can see the whole workflow before touching real
-          people. Everything is tagged <code>source = demo</code> and the remove button deletes
-          all of it. It will not overwrite a profile you have already filled in.</div>
+        <h2>Coverage</h2>
+        <div id="dash-coverage"></div>
+      </div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h2>Credits (ledger)</h2>
+        <div id="dash-credits"></div>
+        <div class="hint">Local fetch_log only — no live Prospeo balance call.</div>
+      </div>
+      <div class="card">
+        <h2>Recently sent</h2>
+        <div id="dash-sent"></div>
       </div>
     </div>
     <div class="card">
-      <h2>Where replies come from</h2>
-      <div id="funnel"></div>
-      <div class="grid2" style="margin-top:14px">
-        <div><h2 style="font-size:12.5px">By firm type</h2><div id="an-type"></div></div>
-        <div><h2 style="font-size:12.5px">By template</h2><div id="an-tpl"></div></div>
+      <h2>Pipeline health</h2>
+      <div id="health"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="ghost sm" onclick="demo('load')">Load sample data</button>
+        <button class="ghost sm" onclick="demo('clear')">Remove sample data</button>
       </div>
-      <div class="hint">Empty until you have sent mail. Reply rate by firm type tells you where to
-        spend next week; reply rate by template tells you how to write.</div>
+      <div class="hint">Sample rows are tagged <code>source = demo</code>. Remove deletes only those.</div>
     </div>
   </section>
 

@@ -140,25 +140,36 @@ def _request_key(endpoint, payload):
 
 
 # ------------------------------------------------------------------- endpoints
-def search_person(job_titles, locations=None, websites=None, page=1,
-                  api_key=None, force=False):
-    """Find people by job title and location. This is the targeting Hunter lacks."""
-    if not job_titles:
-        return {"ok": False, "error": "at least one job title is required"}
-    filters = {"person_job_title": {"include": list(job_titles),
-                                    "match_mode": "CONTAINS"}}
-    if locations:
-        # `person_location` expects an internal location id, not free text.
-        # `person_location_search` is the one that accepts "London".
-        filters["person_location_search"] = {"include": list(locations)}
-    if websites:
-        filters["company"] = {"websites": {"include": list(websites)}}
+def search_person(job_titles=None, locations=None, websites=None, schools=None,
+                  page=1, api_key=None, force=False, filters=None):
+    """Find people. Search never reveals email/phone - that is enrich_person.
+
+    Pass either structured kwargs (titles / locations / websites / schools)
+    or a raw `filters` dict from the Prospeo docs. At least one positive
+    filter is required. Cost: 1 credit per page of up to 25 people.
+    """
+    if filters is None:
+        filters = {}
+        if job_titles:
+            filters["person_job_title"] = {"include": list(job_titles),
+                                           "match_mode": "CONTAINS"}
+        if locations:
+            # `person_location` expects an internal location id, not free text.
+            # `person_location_search` is the one that accepts "London".
+            filters["person_location_search"] = {"include": list(locations)}
+        if websites:
+            filters["company"] = {"websites": {"include": list(websites)}}
+        if schools:
+            filters["person_education"] = {"schools": list(schools)}
+    if not filters:
+        return {"ok": False, "error": "at least one search filter is required"}
     payload = {"page": int(page), "filters": filters}
 
     body, row = _call("search-person", payload, api_key=api_key,
                       credits=CREDIT_COST["search-person"], force=force)
-    if not body:
-        return {"ok": False, "error": row.get("error") or "search failed",
+    if not body or (isinstance(body, dict) and body.get("error")):
+        err = row.get("error") or "search failed"
+        return {"ok": False, "error": str(err),
                 "status": row.get("status"), "cached": row.get("cached", False)}
     pagination = body.get("pagination") or {}
     return {
@@ -167,8 +178,10 @@ def search_person(job_titles, locations=None, websites=None, page=1,
         "total_count": pagination.get("total_count"),
         "total_page": pagination.get("total_page"),
         "page": pagination.get("current_page") or page,
-        "credits": row.get("credits", 0.0),
+        "credits": 0.0 if body.get("free") else row.get("credits", 0.0),
         "cached": row.get("cached", False),
+        "free": bool(body.get("free")),
+        "raw": body,
     }
 
 

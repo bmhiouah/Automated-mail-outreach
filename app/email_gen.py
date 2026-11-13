@@ -191,11 +191,11 @@ def score_email(subject, body, ctx=None):
         issues.append("no question - a cold email with no ask gets no reply")
         score -= 8
 
-    if words > 200:
+    if words > 140:
         issues.append(f"{words} words - far too long, this will not be read")
         score -= 25
-    elif words > 185:
-        issues.append(f"{words} words - too long, nobody reads this on a phone")
+    elif words > 110:
+        issues.append(f"{words} words - too long; cut hard-sell and repeats")
         score -= 15
     elif words < 40:
         issues.append(f"{words} words - too thin to be worth answering")

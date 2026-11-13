@@ -234,6 +234,7 @@ COMPANY_EXTRA_COLUMNS = [
     # Prospeo firm data
     "website TEXT", "logo_url TEXT", "revenue_printed TEXT", "funding_total INTEGER",
     "technologies TEXT", "job_postings_count INTEGER", "prospeo_id TEXT",
+    "active_job_count INTEGER", "active_job_titles TEXT",
     # email convention provenance
     "pattern_source TEXT", "pattern_sample TEXT",
 ]
@@ -248,6 +249,8 @@ CONTACT_EXTRA_COLUMNS = [
     # email_masked stays: the reconstruction pass reads it to turn masked
     # Prospeo evidence into guessed candidates.
     "email_masked TEXT",
+    # Flexible alumni / school tags from CSV exports (comma-separated).
+    "schools TEXT",
 ]
 
 # Columns that carry nothing in the UNIFIED table. Since the per-source raw
@@ -280,6 +283,7 @@ CONTACTS_ORDER = [
     "city", "state", "country", "country_code", "location_raw", "timezone",
     "email", "email_masked", "email_source",
     "phone", "linkedin_url",
+    "schools",
     "created_at", "updated_at",
 ]
 

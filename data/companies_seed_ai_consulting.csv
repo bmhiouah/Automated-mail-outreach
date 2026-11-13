@@ -1,0 +1,44 @@
+name,type,subtype,hq_city,hq_country,market,domain,tier,notes
+BCG X,consulting,AI build / design,Paris,France,Europe,bcg.com,1,BCG AI+tech+design unit (ex-GAMMA/Platinion/DV) - Paris & London hubs
+QuantumBlack,consulting,McKinsey AI,London,UK,Global,quantumblack.com,1,McKinsey AI/data science arm - London HQ; Paris presence
+McKinsey & Company,consulting,strategy + AI,New York,USA,Global,mckinsey.com,1,Parent of QuantumBlack; board-level AI transformation
+Artefact,consulting,data & AI,Paris,France,Europe,artefact.com,1,Paris-born data/AI consultancy; strong FR + EU consumer/retail
+Bain & Company,consulting,strategy + AI,Boston,USA,Global,bain.com,1,Strategy + Advanced Analytics / AI practice; Paris & London
+Accenture,consulting,AI & data,Dublin,Ireland,Global,accenture.com,1,Incl. Applied Intelligence / Faculty acquisition - large Paris & London benches
+Capgemini Invent,consulting,AI & digital,Paris,France,Europe,capgemini.com,1,Incl. Quantmetry AI; France HQ strength
+Deloitte,consulting,AI & data,London,UK,Global,deloitte.com,1,AI & Data / Omnia - Big Four prestige
+EY,consulting,AI & data,London,UK,Global,ey.com,1,EY.ai / data & analytics practice
+PwC,consulting,AI & data,London,UK,Global,pwc.com,1,AI & GenAI practices; Paris & London
+KPMG,consulting,Lighthouse AI,Amstelveen,Netherlands,Global,kpmg.com,2,KPMG Lighthouse AI & data
+Sia Partners,consulting,AI & data,Paris,France,Europe,sia-partners.com,1,French consulting; Heka AI apps - strong Paris
+Ekimetrics,consulting,data science,Paris,France,Europe,ekimetrics.com,1,Paris data science / measurement / AI boutique - prestige FR
+Oliver Wyman,consulting,strategy + data,New York,USA,Global,oliverwyman.com,2,Strategy with strong analytics; Paris & London
+Roland Berger,consulting,strategy + digital,Munich,Germany,Europe,rolandberger.com,2,European strategy; digital/AI practice
+Kearney,consulting,strategy + AI,Chicago,USA,Global,kearney.com,2,Strategy consulting with AI offerings
+Thoughtworks,consulting,AI engineering,Chicago,USA,Global,thoughtworks.com,2,Premium engineering + AI; London & Europe
+Slalom,consulting,AI & data,Seattle,USA,Global,slalom.com,2,Modern consultancy; London presence
+Publicis Sapient,consulting,digital & AI,Boston,USA,Global,publicissapient.com,2,Digital transformation + AI; Paris & London
+Fifty-Five,consulting,data & analytics,Paris,France,Europe,fifty-five.com,2,Data consultancy (LVMH-related ecosystem) - Paris
+Converteo,consulting,data & digital,Paris,France,France,converteo.com,2,French data / digital consultancy
+Keyrus,consulting,data & AI,Levallois-Perret,France,Europe,keyrus.com,2,Data & digital consulting - France heavy
+Hugging Face,applied_ai,ML platform,New York,USA,Global,huggingface.co,1,Applied ML/AI product; major Paris engineering hub
+Mistral AI,applied_ai,frontier models,Paris,France,Europe,mistral.ai,1,Paris frontier lab - applied research / engineering roles
+DeepMind,applied_ai,research lab,London,UK,Global,deepmind.com,1,Google DeepMind - London; very selective applied research
+OpenAI,applied_ai,frontier models,San Francisco,USA,Global,openai.com,1,London office growing; applied research/eng
+Anthropic,applied_ai,frontier models,San Francisco,USA,Global,anthropic.com,1,Applied AI / research; EU presence expanding
+Databricks,applied_ai,data & AI platform,San Francisco,USA,Global,databricks.com,1,Data science / ML eng roles; Paris & London
+Dataiku,applied_ai,AI platform,New York,USA,Global,dataiku.com,1,French-rooted AI platform; Paris HQ heritage + London
+Palantir,applied_ai,software,Denver,USA,Global,palantir.com,2,Applied AI / forward deployed; London strong
+Scale AI,applied_ai,AI data,San Francisco,USA,Global,scale.com,2,Applied AI ops/eng; London
+Cohere,applied_ai,enterprise LLM,Toronto,Canada,Global,cohere.com,2,Applied LLM; London office
+Aleph Alpha,applied_ai,sovereign AI,Heidelberg,Germany,Europe,aleph-alpha.com,2,European applied AI lab
+LightOn,applied_ai,enterprise LLM,Paris,France,France,lighton.ai,2,Paris generative AI company
+Probabl,applied_ai,open source ML,Paris,France,France,probabl.ai,2,scikit-learn / open-source ML spin; Paris
+Octo Technology,consulting,tech & AI,Paris,France,France,octo.com,2,Accenture tech consultancy; strong Paris engineering
+IBM Consulting,consulting,AI & hybrid cloud,Armonk,USA,Global,ibm.com,2,watsonx / AI consulting; Paris & London
+Cognizant,consulting,AI & digital,Teaneck,USA,Global,cognizant.com,2,AI & automation delivery; London
+EPAM Systems,consulting,AI engineering,Newtown,USA,Global,epam.com,2,Engineering-heavy AI delivery; Europe & UK
+ML6,consulting,AI boutique,Ghent,Belgium,Europe,ml6.eu,2,Benelux AI/ML boutique; EU-focused
+Faculty,consulting,AI (Accenture),London,UK,UK,faculty.ai,2,UK AI specialist now under Accenture
+Aiimi,consulting,data & AI,London,UK,UK,aiimi.com,3,UK data/AI specialist
+Deeper Insights,consulting,AI boutique,London,UK,UK,deeperinsights.com,3,UK ML/NLP boutique

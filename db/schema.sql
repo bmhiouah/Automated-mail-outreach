@@ -40,6 +40,9 @@ CREATE TABLE IF NOT EXISTS companies (
   funding_total      INTEGER,
   technologies       TEXT,                 -- comma separated stack
   job_postings_count INTEGER,              -- live hiring signal
+  -- Prospeo CSV / company search: open roles at the firm (not the person's title)
+  active_job_count   INTEGER,
+  active_job_titles  TEXT,
   prospeo_id         TEXT,
   -- The email convention, learned once and reused forever. A firm's address
   -- format is a property of the FIRM, not the person, so it lives here: once
@@ -117,6 +120,9 @@ CREATE TABLE IF NOT EXISTS contacts (
   email_source      TEXT,
   phone             TEXT,
   linkedin_url      TEXT,
+  -- Comma-separated school tags from exports (e.g. CentraleSupélec). Flexible
+  -- so a later Dauphine export can append without a boolean column per school.
+  schools           TEXT,
   created_at        TEXT DEFAULT CURRENT_TIMESTAMP,
   updated_at        TEXT DEFAULT CURRENT_TIMESTAMP,
   UNIQUE (first_name, last_name, company_name)

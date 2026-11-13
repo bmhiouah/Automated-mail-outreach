@@ -580,28 +580,26 @@ class TestThePromptCarriesThePerson(unittest.TestCase):
         self.assertNotIn("Redux", prompt)
         self.assertNotIn("Algolia", prompt)
 
-    def test_the_prompt_demands_the_hiring_question(self):
-        """The user's own wording: 'Could you let me know if your team, or a
-        related team, is looking for someone with this mix' - the question
-        itself with no flattering preface, plus the meeting offer."""
+    def test_the_prompt_demands_an_explicit_referral_ask(self):
+        """Ask must be referral / cooptage, not only 'are you hiring'."""
         prompt = self._real_prompt()
-        self.assertIn("Could you let me know if your team, or a related team", prompt)
-        self.assertIn("10-15 minute", prompt)
-        self.assertIn("at your convenience", prompt)
+        self.assertIn("referral", prompt.lower())
+        self.assertIn("referring me", prompt)
+        self.assertIn("referral", llm.SYSTEM_PROMPT.lower())
+        self.assertIn("cooptage", llm.SYSTEM_PROMPT.lower())
+        self.assertIn("70 to 110 words", llm.SYSTEM_PROMPT)
+        self.assertIn("No hard sell", llm.SYSTEM_PROMPT)
         self.assertNotIn("I would really value your perspective", prompt)
 
     def test_paragraph_one_opener_is_about_them(self):
-        """Paragraph 1 opener: reason + target role + found via their work,
-        phrased so it stays grammatical - never 'opportunities in <job
-        title>' (the 'opportunities in Quantitative Analyst' failure) and
-        never 'I came across your profile while researching'. """
+        """Paragraph 1: target role + why this person (desk/team), never
+        'opportunities in <job title>' and never the researching-profile
+        filler. """
         prompt = self._real_prompt()
         self.assertIn("exploring {{target role}} opportunities", prompt)
-        self.assertIn("came across your work at {{Company}}", prompt)
-        self.assertIn("where you {{their actual work - narrow:", prompt)
-        # The broken form appears in the prompt only to be banned.
+        self.assertIn("why this person", prompt)
         self.assertIn("opportunities in <a job title>", prompt)
-        self.assertIn("Grammar comes first", llm.SYSTEM_PROMPT)
+        self.assertIn("Grammar:", llm.SYSTEM_PROMPT)
         self.assertNotIn("I came across your profile while researching", prompt)
         self.assertNotIn("caught my attention because of", prompt)
 
@@ -812,32 +810,23 @@ class TestTheQueueWalksItself(QueueFixture):
 
 
 class TestTheSignature(QueueFixture):
-    """The sign-off is written by the code, never the model.
+    """The sign-off is written by the code: first name only.
 
-    A model asked for a signature invents a phone number or a profile URL, and a
-    wrong one in an outbound mail is a real problem for a real person. The
-    ordering follows the user's own template: name, LinkedIn, phone.
+    LinkedIn and phone stay off the mail — long signature blocks read as
+    hard-sell. Models that invent contact lines under Best are stripped.
     """
 
     PROFILE = {"full_name": "Badre Mhiouah",
                "linkedin": "https://linkedin.com/in/badre",
                "phone": "+33 6 11 68 23 67"}
 
-    def test_the_signature_is_name_then_linkedin_then_phone(self):
-        sig = llm.signature(self.PROFILE)
-        self.assertEqual(sig.split("\n"),
-                         ["Badre Mhiouah",
-                          "https://linkedin.com/in/badre",
-                          "+33 6 11 68 23 67"])
+    def test_the_signature_is_first_name_only(self):
+        self.assertEqual(llm.signature(self.PROFILE), "Badre")
 
-    def test_a_missing_field_is_simply_absent(self):
-        """No blank lines, no 'None', no invented placeholder."""
-        sig = llm.signature({"full_name": "Badre Mhiouah", "phone": "+33 6"})
-        self.assertEqual(sig.split("\n"), ["Badre Mhiouah", "+33 6"])
+    def test_empty_profile_name_gives_empty_signature(self):
+        self.assertEqual(llm.signature({}), "")
 
-    def test_a_model_that_signs_itself_does_not_get_a_second_signature(self):
-        """The double-signature bug: models write the name, then the phone, so a
-        `endswith(name)` test failed and the name appeared twice."""
+    def test_a_model_long_signoff_is_replaced_by_first_name(self):
         saved = llm.chat
         llm.chat = lambda *a, **k: {
             "ok": True, "subject": "s",
@@ -848,22 +837,21 @@ class TestTheSignature(QueueFixture):
             out = llm.generate_mail({}, {}, self.PROFILE)
         finally:
             llm.chat = saved
-        self.assertEqual(out["body"].lower().count("badre mhiouah"), 1)
-        self.assertEqual(out["body"].count("+33 6 11 68 23 67"), 1)
+        self.assertTrue(out["body"].rstrip().endswith("Best,\nBadre"))
+        self.assertNotIn("linkedin.com/in/badre", out["body"])
+        self.assertNotIn("+33 6 11 68 23 67", out["body"])
 
-    def test_only_the_missing_lines_are_appended(self):
+    def test_best_without_name_gets_first_name_appended(self):
         saved = llm.chat
         llm.chat = lambda *a, **k: {
             "ok": True, "subject": "s",
-            "body": "Hi Robin,\n\nThank you.\n\nBest,\nBadre Mhiouah",
+            "body": "Hi Robin,\n\nThank you.\n\nBest,",
             "model": "m", "cached": False, "tokens": 1, "specifics": ["x"]}
         try:
             out = llm.generate_mail({}, {}, self.PROFILE)
         finally:
             llm.chat = saved
-        self.assertEqual(out["body"].lower().count("badre mhiouah"), 1)
-        self.assertIn("linkedin.com/in/badre", out["body"])
-        self.assertIn("+33 6 11 68 23 67", out["body"])
+        self.assertTrue(out["body"].rstrip().endswith("Best,\nBadre"))
 
 
 class TestChoosingTheModel(QueueFixture):

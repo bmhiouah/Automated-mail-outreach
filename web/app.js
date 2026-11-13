@@ -27,53 +27,88 @@ document.querySelectorAll('#nav button').forEach(b=>b.onclick=()=>{
 
 /* ---------- dashboard ---------- */
 async function loadDash(){
-  const s = await api('GET','/api/stats');
+  const [s, a] = await Promise.all([
+    api('GET','/api/stats'),
+    api('GET','/api/analytics'),
+  ]);
   const card=(n,l)=>`<div class="stat"><div class="n">${n}</div><div class="l">${l}</div></div>`;
+  const prospeo = (s.prospeo_credits==null) ? 0 : Number(s.prospeo_credits);
   $('#stats').innerHTML =
-    card(s.companies,'companies') + card(s.contacts,'contacts') +
-    card(s.with_email,'with an email') + card(s.sent,'emails sent') +
-    card(s.replies,'replies') + card(s.followups_due,'follow-ups due');
+    card(s.companies,'companies') +
+    card(s.with_email,'with an email') +
+    card(s.queue_pending,'queue pending') +
+    card(s.sent_7d,`sent (7d)` + (s.sent?` · ${s.sent} total`:'')) +
+    card(prospeo % 1 ? prospeo.toFixed(1) : prospeo,'Prospeo credits');
+
+  const todo = a.todo || [];
+  $('#dash-todo').innerHTML = todo.length
+    ? '<table>'+todo.map(o=>{
+        const who = [o.first_name,o.last_name].filter(Boolean).join(' ');
+        return `<tr>
+          <td><b>${esc(who||'—')}</b><br><span class="muted">${esc(o.firm||'')}</span></td>
+          <td>${esc(o.subject||'')}</td>
+          <td><button class="act sm" onclick="openDashQueue(${o.id})">Open in Queue</button></td>
+        </tr>`;
+      }).join('')+'</table>'
+    : '<span class="muted">Queue empty — draft more from Contacts / Companies.</span>';
+
+  const c = a.coverage || {};
+  $('#dash-coverage').innerHTML = `
+    <div class="row" style="margin-bottom:8px">
+      <span class="tag gray">CS alumni ${c.alumni_cs_with_email||0}/${c.alumni_cs_total||0} with email</span>
+      ${(c.alumni_cs_without_email||0)
+        ? `<span class="tag warn">${c.alumni_cs_without_email} without email</span>` : ''}
+    </div>
+    <div class="row" style="margin-bottom:8px">
+      <span class="tag gray">AI firms ${c.ai_firms_with_contacts||0}/${c.ai_firms_total||0} with contacts</span>
+      ${(c.ai_firms_without_contacts||0)
+        ? `<span class="tag warn">${c.ai_firms_without_contacts} empty</span>` : ''}
+    </div>
+    <div class="row">
+      <span class="tag">${c.never_emailed||0} with email, never sent</span>
+      <span class="tag ${(c.hiring_no_outreach||0)?'warn':'gray'}">${c.hiring_no_outreach||0} hiring, no outreach</span>
+    </div>`;
+
+  const credits = a.credits || [];
+  $('#dash-credits').innerHTML = credits.length
+    ? `<table><thead><tr><th>provider</th><th>credits</th><th>30d</th><th>tokens</th></tr></thead><tbody>
+      ${credits.map(r=>`<tr>
+        <td>${esc(r.provider)}</td>
+        <td>${Number(r.credits_total||0)}</td>
+        <td>${Number(r.credits_30d||0)}</td>
+        <td class="muted">${r.tokens_total||0}</td>
+      </tr>`).join('')}</tbody></table>`
+    : '<span class="muted">No API calls logged yet.</span>';
+
+  const recent = a.recent_sent || [];
+  $('#dash-sent').innerHTML = recent.length
+    ? '<table>'+recent.map(o=>{
+        const who = [o.first_name,o.last_name].filter(Boolean).join(' ');
+        const when = (o.sent_at||'').slice(0,10);
+        return `<tr>
+          <td class="muted">${esc(when)}</td>
+          <td><b>${esc(who||'—')}</b><br><span class="muted">${esc(o.firm||'')}</span></td>
+          <td>${esc(o.subject||'')}</td>
+        </tr>`;
+      }).join('')+'</table>'
+    : '<span class="muted">Nothing sent yet.</span>';
+
   const h = [];
   h.push(`<div class="row"><b>Profile completeness</b> <span class="muted">${s.profile_completeness}%</span></div>`);
   h.push(`<div class="bar"><div style="width:${s.profile_completeness}%"></div></div>`);
-  h.push('<div style="height:12px"></div>');
   const byType = (s.companies_by_type||[]).map(x=>`<span class="tag gray">${esc(x.type)} ${x.n}</span>`).join(' ');
   h.push(`<div class="row" style="margin-top:10px">${byType}</div>`);
-  const cs = (s.contacts_by_status||[]).map(x=>`<span class="tag">${esc(x.status)} ${x.n}</span>`).join(' ');
-  h.push(`<div class="row"><b>Contacts</b></div><div class="row">${cs||'<span class="muted">none yet</span>'}</div>`);
   const os = (s.outreach_by_status||[]).map(x=>`<span class="tag">${esc(x.status)} ${x.n}</span>`).join(' ');
   h.push(`<div class="row"><b>Outreach</b></div><div class="row">${os||'<span class="muted">none yet</span>'}</div>`);
-  h.push(`<div class="row"><b>Coverage</b></div><div class="row">
-    <span class="tag gray">${s.firms_with_contacts}/${s.companies} firms with contacts</span>
-    <span class="tag gray">${s.firms_with_pattern} firms with an email pattern</span></div>`);
+  h.push(`<div class="row"><b>Firms</b></div><div class="row">
+    <span class="tag gray">${s.firms_with_contacts}/${s.companies} with contacts</span>
+    <span class="tag gray">${s.firms_with_pattern} with email pattern</span></div>`);
   $('#health').innerHTML = h.join('');
-
-  const a = await api('GET','/api/analytics');
-  $('#funnel').innerHTML = a.funnel.map(f=>`
-    <div class="row" style="margin-bottom:4px">
-      <span style="width:120px">${esc(f.stage)}</span>
-      <span class="bar" style="flex:1"><div style="width:${Math.min(100,f.pct)}%"></div></span>
-      <span style="width:90px;text-align:right" class="muted">${f.n} · ${f.pct}%</span>
-    </div>`).join('');
-  const rate=(x)=>`<span class="${x>=20?'tag good':(x>0?'tag warn':'tag gray')}">${x}%</span>`;
-  $('#an-type').innerHTML = a.by_type.length ? `<table><thead><tr><th>firm type</th>
-    <th>contacts</th><th>emailed</th></tr></thead><tbody>
-    ${a.by_type.map(r=>`<tr><td>${esc(r.k)}</td><td>${r.contacts}</td><td>${r.emailed}</td></tr>`).join('')}</tbody></table>`
-    : '<span class="muted">no contacts yet</span>';
-  $('#an-tpl').innerHTML = a.by_template.length ? `<table><thead><tr><th>template</th>
-    <th>sent</th><th>replied</th><th>reply rate</th></tr></thead><tbody>
-    ${a.by_template.map(r=>`<tr><td>${esc(r.k)}</td><td>${r.sent}</td><td>${r.replied}</td>
-      <td>${rate(r.reply_rate)}</td></tr>`).join('')}</tbody></table>`
-    : '<span class="muted">nothing sent yet</span>';
-
-  const due = await api('GET','/api/outreach?due=1');
-  $('#due').innerHTML = due.length ? '<table>'+due.map(o=>`<tr>
-      <td>${esc(o.first_name)} ${esc(o.last_name)}</td>
-      <td class="muted">${esc(o.company_name||'')}</td>
-      <td><span class="tag warn">${esc(o.next_followup_at)}</span></td>
-      <td><button class="act sm" onclick="queueFollowup(${o.id})">Draft follow-up</button>
-          <button class="ghost sm" onclick="viewMail(${o.id})">View</button></td></tr>`).join('')+'</table>'
-    : '<span class="muted">Nothing due. Go find more contacts.</span>';
+}
+async function openDashQueue(qid){
+  document.querySelector('#nav button[data-tab="queue"]').click();
+  await loadQueueTab();
+  await openQueueRow(qid);
 }
 function openMail(id){ location.hash=''; document.querySelector('#nav button[data-tab="outreach"]').click(); }
 async function demo(action){
